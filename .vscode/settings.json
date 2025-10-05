@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "debug.h": "c",
+        "if_ether.h": "c",
+        "ethernet.h": "c"
+    }
+}
