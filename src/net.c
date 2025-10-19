@@ -10,6 +10,7 @@
 #include "debug.h"
 #include <netinet/if_ether.h>
 #include <stdlib.h>
+#include "pcap_utils.h"
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -150,6 +151,13 @@ void print_mac(uint8_t *arr)
     printf("%02x:%02x:%02x:%02x:%02x:%02x\n", arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
 }
 
+char * mac_to_string(uint8_t *arr)
+{
+    static char str[18];
+    snprintf(str, sizeof(str), "%02x:%02x:%02x:%02x:%02x:%02x", arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
+    return str;
+}
+
 void write_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
@@ -166,78 +174,64 @@ void write_broadcast_ethernet_header(const struct NetConfig *config, uint8_t *bu
     eth->ether_type = htons(ether_type);
 }
 
-void write_arp_request_for_gateway(uint8_t *buffer, const struct NetConfig *config)
+void write_arp_request(uint8_t *buffer, const struct NetConfig *config, struct in_addr *target_ip)
 {
     struct ether_arp *arp_request = (struct ether_arp *)buffer;
     
     memset(arp_request, 0, sizeof(struct ether_arp));
 
-   arp_request->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
-   arp_request->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
-   arp_request->ea_hdr.ar_hln = ETH_ALEN;
-   arp_request->ea_hdr.ar_pln = IPV4_LEN;
-   arp_request->ea_hdr.ar_op = htons(ARPOP_REQUEST);
+    arp_request->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
+    arp_request->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
+    arp_request->ea_hdr.ar_hln = ETH_ALEN;
+    arp_request->ea_hdr.ar_pln = IPV4_LEN;
+    arp_request->ea_hdr.ar_op = htons(ARPOP_REQUEST);
 
-   memcpy(arp_request->arp_sha, config->device_mac, ETH_ALEN);
-   memcpy(arp_request->arp_spa, &config->local_ip, sizeof(struct in_addr));
-   memset(arp_request->arp_tha, 0xFF, ETH_ALEN); //broadcast mac
-   memcpy(arp_request->arp_tpa, &config->target_ip, sizeof(struct in_addr));
+    memcpy(arp_request->arp_sha, config->device_mac, ETH_ALEN);
+    memcpy(arp_request->arp_spa, &config->local_ip, sizeof(struct in_addr));
+    memset(arp_request->arp_tha, 0xFF, ETH_ALEN); //broadcast mac
+    memcpy(arp_request->arp_tpa, target_ip, sizeof(struct in_addr));
 }
 
 #define GET_GATEWAY_MAC "Getting default gateway mac: "
 
 void request_gateway_mac(struct NetConfig *config) {
-    uint8_t arp_request[sizeof(struct ether_header) + sizeof(struct ether_arp)];
-    write_broadcast_ethernet_header(config, arp_request, ETHERTYPE_ARP);
-    write_arp_request_for_gateway(&arp_request[sizeof(struct ether_header)], config);
-
     struct in_addr gateway_ip = default_gateway_ip();
     
-    char errbuf[PCAP_ERRBUF_SIZE];
-    
-    pcap_t *capture_handle = pcap_open_live(config->device_name, FULL_LENGTH_PACKET, NON_PROMISCUOUS, DO_NOT_WAIT_TO_ACUMULATE_PACKETS, errbuf);
-    if (capture_handle == NULL) {
-        pcap_close(capture_handle);
-        fprintf(stderr, "Failed to open capture handle: %s\n", errbuf);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to open capture handle");
+    if (DEBUG) {
+        printf(GET_GATEWAY_MAC"Gateway ip %s\n", inet_ntoa(gateway_ip));
     }
     
-    bpf_u_int32 net=0, mask=0;
-    if(pcap_lookupnet(config->device_name, &net, &mask, errbuf)) {
-        pcap_close(capture_handle);
-        fprintf(stderr, "Failed to lookup network: %s\n", errbuf);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to lookup network");
-    }
-
-    struct bpf_program prog;
+    uint8_t arp_request[sizeof(struct ether_header) + sizeof(struct ether_arp)];
+    write_broadcast_ethernet_header(config, arp_request, ETHERTYPE_ARP);
+    
+    write_arp_request(&arp_request[sizeof(struct ether_header)], config, &gateway_ip);
+    
+    pcap_t *handle = create_capture_handle(config->device_name); 
     
     char filter[256];
-    char *target_ip = inet_ntoa(gateway_ip);
-    if (target_ip == NULL) {
-        pcap_close(capture_handle);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to convert gateway ip to string");
-    }
-    
-    snprintf(filter, sizeof(filter), "icmp and icmp[icmptype] == icmp-echoreply and src host %s", target_ip);
- 
-    if (pcap_compile(capture_handle, &prog, filter, 1 /*optimize*/, mask)) {
-        pcap_perror(capture_handle, GET_GATEWAY_MAC"Failed to compile filter");
-        pcap_close(capture_handle);
-        pcap_freecode(&prog);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to convert gateway ip to string");
-    }
-    
-    if (pcap_setfilter(capture_handle, &prog)) {
-        pcap_perror(capture_handle, GET_GATEWAY_MAC"Failed to set filter");
-        pcap_freecode(&prog);
-        pcap_close(capture_handle);
-    }
-    pcap_freecode(&prog);
+    memset(filter, 0, sizeof(filter));
+    snprintf(filter, sizeof(filter), "arp and arp src host %s and arp[6:2] = 2", inet_ntoa(gateway_ip));
+    set_packet_filter(handle, filter);
 
-    if (pcap_sendpacket(capture_handle, arp_request, sizeof(arp_request))) {
-        pcap_perror(capture_handle, GET_GATEWAY_MAC"Failed to send arp request");
-        pcap_close(capture_handle);
+    if (pcap_sendpacket(handle, arp_request, sizeof(arp_request))) {
+        pcap_perror(handle, GET_GATEWAY_MAC"Failed to send arp request");
+        pcap_close(handle);
         clean_exit_failure(GET_GATEWAY_MAC"Failed to send arp request");
     }
-    pcap_close(capture_handle);
+    
+    struct pcap_pkthdr h;
+    const u_char *packet = pcap_next(handle, &h);
+    if (packet == NULL) {
+        pcap_close(handle);
+        clean_exit_failure(GET_GATEWAY_MAC"Failed to get gateway mac");
+    }
+    
+    struct ether_arp *arp_response = (struct ether_arp *) (packet + sizeof(struct ether_header));
+    memcpy(config->gateway_mac, arp_response->arp_sha, ETH_ALEN);
+    
+    if (DEBUG) {
+        printf(GET_GATEWAY_MAC"Gateway mac: %s\n", mac_to_string(config->gateway_mac));
+    }
+    
+    pcap_close(handle);
 }

@@ -26,6 +26,8 @@ void mac_address_for_device(char *device_name, uint8_t *mac_address_out);
 
 void print_mac(uint8_t *arr);
 
+char * mac_to_string(uint8_t *arr);
+
 struct NetConfig {
     char device_name[30];
     uint8_t device_mac[6];
@@ -40,7 +42,7 @@ void write_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint
 
 void write_broadcast_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type);
 
-void write_arp_request_for_gateway(uint8_t *buffer, const struct NetConfig *config);
+void write_arp_request(uint8_t *buffer, const struct NetConfig *config, struct in_addr *target_ip);
 
 void request_gateway_mac(struct NetConfig *config);
 
