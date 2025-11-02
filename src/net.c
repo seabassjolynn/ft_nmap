@@ -4,13 +4,12 @@
 #include <sys/types.h>
 #include <ifaddrs.h>
 #include <linux/if_packet.h>
-#include <net/ethernet.h> /* the L2 protocols */
 #include <stdio.h>
 #include <fcntl.h>
 #include "debug.h"
-#include <netinet/if_ether.h>
 #include <stdlib.h>
 #include "pcap_utils.h"
+#include "utils.h"
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -42,57 +41,6 @@ struct in_addr local_ip_for_internet_connection(void) {
 
     close(socket_fd);
     return local_ip.sin_addr;
-}
-
-
-#define GET_DEFAULT_GATEWAY_IP "Getting default gateway ip: "
-
-static struct in_addr default_gateway_ip(void) {
-    struct in_addr gateway_in_addr;
-    gateway_in_addr.s_addr = 0;
-
-    FILE *routing_table_stream = fopen("/proc/net/route", "r");
-    if (routing_table_stream == NULL) {
-        clean_exit_failure(GET_DEFAULT_GATEWAY_IP"Failed to open routing table");
-    }
-    
-    int line_num = 0;
-    int line_len = 1024;
-    char line[line_len];
-    while (fgets(line, line_len, routing_table_stream) != NULL) {
-        if (line_num > 0) {
-            if (DEBUG) {
-                printf(GET_DEFAULT_GATEWAY_IP"Line: %s\n", line);
-            }    
-            
-            char iface[64];
-            int flags, refcnt, use, metric, mtu, window, irtt;
-            long unsigned int dest_ip, gateway_ip, mask;
-            
-            if (sscanf(line, "%s %lx %lx %d %d %d %d %lx %d %d %d\n", iface, &dest_ip, &gateway_ip, &flags, &refcnt, &use, &metric, &mask, &mtu, &window, &irtt) == 11) {
-                if (DEBUG) {
-                    printf(GET_DEFAULT_GATEWAY_IP"Parsed: iface: %s, dest: %lx, gateway: %lx, flags: %d, refcnt: %d, use: %d, metric: %d, mask: %lx, mtu: %d, window: %d, irtt: %d\n", iface, dest_ip, gateway_ip, flags, refcnt, use, metric, mask, mtu, window, irtt);
-                }
-                if (dest_ip == 0) {
-                    gateway_in_addr.s_addr = gateway_ip;
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        
-        memset(line, 0, line_len);
-        line_num++;
-    }
-    
-    fclose(routing_table_stream);
-
-    if (gateway_in_addr.s_addr == 0) {
-        clean_exit_failure(GET_DEFAULT_GATEWAY_IP"Failed to find default gateway");
-    }
-        
-    return gateway_in_addr;
 }
 
 void device_for_internet_connection(struct in_addr *local_ip, char *device_name_out) {
@@ -158,7 +106,7 @@ char * mac_to_string(uint8_t *arr)
     return str;
 }
 
-void write_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type)
+void write_local_to_gateway_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
     memcpy(eth->ether_dhost, config->gateway_mac, ETH_ALEN);
@@ -166,7 +114,7 @@ void write_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint
     eth->ether_type = htons(ether_type);
 }
 
-void write_broadcast_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type)
+void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
     memset(eth->ether_dhost, 0xFF, ETH_ALEN);
@@ -174,7 +122,7 @@ void write_broadcast_ethernet_header(const struct NetConfig *config, uint8_t *bu
     eth->ether_type = htons(ether_type);
 }
 
-void write_arp_request(uint8_t *buffer, const struct NetConfig *config, struct in_addr *target_ip)
+void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip, uint8_t *buffer)
 {
     struct ether_arp *arp_request = (struct ether_arp *)buffer;
     
@@ -192,46 +140,74 @@ void write_arp_request(uint8_t *buffer, const struct NetConfig *config, struct i
     memcpy(arp_request->arp_tpa, target_ip, sizeof(struct in_addr));
 }
 
-#define GET_GATEWAY_MAC "Getting default gateway mac: "
+static uint16_t calculate_checksum(void *addr, int len)
+{    
+    uint32_t sum = 0;
+    while (len > 1)
+    {
+        sum += *((uint16_t *) addr);  
+        addr += 2;
+        len -= 2;
+    }
 
-void request_gateway_mac(struct NetConfig *config) {
-    struct in_addr gateway_ip = default_gateway_ip();
-    
-    if (DEBUG) {
-        printf(GET_GATEWAY_MAC"Gateway ip %s\n", inet_ntoa(gateway_ip));
+    if( len > 0 )
+    {
+        sum += * (uint8_t*) addr;
     }
-    
-    uint8_t arp_request[sizeof(struct ether_header) + sizeof(struct ether_arp)];
-    write_broadcast_ethernet_header(config, arp_request, ETHERTYPE_ARP);
-    
-    write_arp_request(&arp_request[sizeof(struct ether_header)], config, &gateway_ip);
-    
-    pcap_t *handle = create_capture_handle(config->device_name); 
-    
-    char filter[256];
-    memset(filter, 0, sizeof(filter));
-    snprintf(filter, sizeof(filter), "arp and arp src host %s and arp[6:2] = 2", inet_ntoa(gateway_ip));
-    set_packet_filter(handle, filter);
+               
 
-    if (pcap_sendpacket(handle, arp_request, sizeof(arp_request))) {
-        pcap_perror(handle, GET_GATEWAY_MAC"Failed to send arp request");
-        pcap_close(handle);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to send arp request");
+    /*  Fold 32-bit sum to 16 bits */
+    while (sum >> 16)
+    {
+        sum = (sum & 0xffff) + (sum >> 16);
     }
+    return ~sum;
+}
+
+void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer)
+{
+    struct  ip_header *ip_header = (struct ip_header *)buffer;
+    ip_header->ihl_and_version = 0x45;
+    ip_header->tos = 0;
+    ip_header->total_len = htons(5 * 4 + payload_len);
+    ip_header->identification = 0;
+    ip_header->fragment_offset = 0;
+    ip_header->ttl = 64;
+    ip_header->protocol_number = protocol;
+    ip_header->checksum = 0;
+    ip_header->source_address = config->local_ip.s_addr;
+    ip_header->destination_address = config->target_ip.s_addr;
+    uint16_t checksum = calculate_checksum(ip_header, sizeof(struct ip_header));
+    ip_header->checksum = checksum;
+};
+
+void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer)
+{
+    struct icmp_header *icmp_header = (struct icmp_header *)buffer;
+    icmp_header->type = 8;
+    icmp_header->code = 0;
+    icmp_header->checksum = 0;
+    icmp_header->identifier = htons(identifier);
+    icmp_header->sequence_number = 0;
+
+    memcpy(buffer + sizeof(struct icmp_header), data, data_len);
+
+    uint16_t checksum = calculate_checksum(buffer, sizeof(struct icmp_header) + data_len);
     
-    struct pcap_pkthdr h;
-    const u_char *packet = pcap_next(handle, &h);
-    if (packet == NULL) {
-        pcap_close(handle);
-        clean_exit_failure(GET_GATEWAY_MAC"Failed to get gateway mac");
-    }
+    icmp_header -> checksum = checksum;
+}
+
+void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer) {
+    struct icmp_header *icmp_header = (struct icmp_header *)buffer;
+    icmp_header->type = 13;
+    icmp_header->code = 0;
+    icmp_header->checksum = 0;
+    icmp_header->identifier = htons(identifier);
+    icmp_header->sequence_number = 0;
+
+    memcpy(buffer + sizeof(struct icmp_header), data, data_len);
+
+    uint16_t checksum = calculate_checksum(buffer, sizeof(struct icmp_header) + data_len);
     
-    struct ether_arp *arp_response = (struct ether_arp *) (packet + sizeof(struct ether_header));
-    memcpy(config->gateway_mac, arp_response->arp_sha, ETH_ALEN);
-    
-    if (DEBUG) {
-        printf(GET_GATEWAY_MAC"Gateway mac: %s\n", mac_to_string(config->gateway_mac));
-    }
-    
-    pcap_close(handle);
+    icmp_header -> checksum = checksum;
 }

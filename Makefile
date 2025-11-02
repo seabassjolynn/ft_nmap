@@ -3,8 +3,8 @@ SRC_DIR= src
 OBJECTS_DIR = objects
 HEADERS_DIR = headers
 
-SOURCES = $(addprefix $(SRC_DIR)/, main.c net.c resources.c pcap_utils.c)
-HEADERS = $(addprefix $(HEADERS_DIR)/, net.h resources.h color_output.h debug.h pcap_utils.h)
+SOURCES = $(addprefix $(SRC_DIR)/, main.c net.c resources.c pcap_utils.c utils.c gateway.c host_up_check.c)
+HEADERS = $(addprefix $(HEADERS_DIR)/, net.h resources.h color_output.h debug.h pcap_utils.h utils.h gate_way.h host_up_check.h)
 # the function syntax is function arg1, arg2, arg3
 # to call a function in makefile, use $(function arg1, arg2, arg3) - unwrappe like variables
 # here arg1 - find all files that have name pattern src/*****.c

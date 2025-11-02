@@ -1,5 +1,6 @@
 #include "pcap_utils.h"
 #include "resources.h"
+#include "utils.h"
 
 #define MAX_PACKET_LENGTH 65535
 #define NO_PROMISCUOUS_MODE 0
@@ -7,7 +8,7 @@
 //not for bunch of packets
 #define IMMEDIATE_MODE_ON 1
 
-pcap_t *create_capture_handle(char *device_name) {
+pcap_t *create_capture_handle(const char *device_name) {
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle = pcap_create(device_name, errbuf);
     if (handle == NULL) {
@@ -58,6 +59,35 @@ void set_packet_filter(pcap_t *handle, char *filter) {
     }
     pcap_freecode(&program);
 }
+
+void send_packet(pcap_t *handle, uint8_t *packet, int packet_size)
+{
+    if (pcap_sendpacket(handle, packet, packet_size)) {
+        pcap_perror(handle, "Failed to send packet");
+        pcap_close(handle);
+        clean_exit_failure("Failed to send packet");
+    }
+}
+
+uint8_t *get_next_packet(pcap_t *handle, bpf_u_int32 expected_packet_len)
+{
+    struct pcap_pkthdr h;
+    const uint8_t *packet = pcap_next(handle, &h);
+    if (packet == NULL) {
+        pcap_close(handle);
+        clean_exit_failure("Failed to get next packet");
+    }
+
+    if (h.caplen < expected_packet_len) {
+        pcap_close(handle);
+        clean_exit_failure(fstring("Error when getting next packet. Received packet length is less than expected: %d, but got: %d", expected_packet_len, h.caplen));
+    }
+
+    return (uint8_t *)packet;
+}
+
+
+
 
 
  

@@ -14,6 +14,10 @@
 #include <arpa/inet.h>
 
 #include <pcap/pcap.h>
+
+#include <net/ethernet.h>
+#include <netinet/if_ether.h>
+
 #define NON_PROMISCUOUS 0
 #define FULL_LENGTH_PACKET 262144
 #define DO_NOT_WAIT_TO_ACUMULATE_PACKETS 0
@@ -38,12 +42,39 @@ struct NetConfig {
     uint16_t target_port;
 };
 
-void write_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type);
+void write_local_to_gateway_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
 
-void write_broadcast_ethernet_header(const struct NetConfig *config, uint8_t *buffer, uint16_t ether_type);
+void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
 
-void write_arp_request(uint8_t *buffer, const struct NetConfig *config, struct in_addr *target_ip);
+void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip, uint8_t *buffer);
 
-void request_gateway_mac(struct NetConfig *config);
+void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
+
+void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
+
+void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
+
+struct ip_header 
+{
+    uint8_t ihl_and_version;
+    uint8_t tos;
+    uint16_t total_len;
+    uint16_t identification;
+    uint16_t fragment_offset;
+    uint8_t ttl;
+    uint8_t protocol_number;
+    uint16_t checksum;
+    uint32_t source_address;
+    uint32_t destination_address;
+};
+
+struct icmp_header
+{
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint16_t identifier;
+    uint16_t sequence_number;
+};
 
 #endif
