@@ -3,8 +3,6 @@
 
 #include <stdbool.h>
 
-bool ping_echo_remote(const struct NetConfig *config, pcap_t *handle);
-
-bool ping_timestamp_remote(const struct NetConfig *config, pcap_t *handle);
+bool is_host_up(const struct NetConfig *config);
 
 #endif

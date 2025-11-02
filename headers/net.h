@@ -52,6 +52,9 @@ void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t pro
 
 void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
 
+#define ICMP_TYPE_TIMESTAMP_RESPONSE 14
+#define ICMP_TYPE_ECHO_REPLY 0
+
 void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
 
 struct ip_header 
