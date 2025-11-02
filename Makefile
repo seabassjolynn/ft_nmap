@@ -26,8 +26,11 @@ all: $(PROGRAM)
 $(PROGRAM): $(OBJECTS)
 	gcc -o $(PROGRAM) $(OBJECTS) -lpcap
 
-$(OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS)
+$(OBJECTS_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS) $(OBJECTS_DIR)
 	gcc -c $(CFLAGS) -I$(HEADERS_DIR) $< -o $@ # -c means compile only, produce an object file
+
+$(OBJECTS_DIR):
+	mkdir -p $(OBJECTS_DIR)
 
 clean:
 	rm -f $(OBJECTS)
