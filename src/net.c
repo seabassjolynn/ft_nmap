@@ -6,14 +6,13 @@
 #include <linux/if_packet.h>
 #include <stdio.h>
 #include <fcntl.h>
-#include "debug.h"
 #include <stdlib.h>
-#include "pcap_utils.h"
-#include "utils.h"
+#include <netinet/tcp.h>
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
 #define DO_NOT_WAIT_TO_ACUMULATE_PACKETS 0
+#define TCP_HEADER_LEN 20
 
 struct in_addr local_ip_for_internet_connection(void) {
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -210,4 +209,61 @@ void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned l
     uint16_t checksum = calculate_checksum(buffer, sizeof(struct icmp_header) + data_len);
     
     icmp_header -> checksum = checksum;
+}
+
+void init_tcp_parameters(struct tcp_parameters *parameters)
+{
+    parameters->destination_port = 0;
+    parameters->flags.syn = false;
+    parameters->flags.rst = false;
+    parameters->sequence_number = 0;
+    parameters->window_size = 0;
+}
+
+void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet)
+{
+    struct tcp_header tcp_header;
+    memset(&tcp_header, 0, sizeof(struct tcp_header));
+
+    tcp_header.source_port = htons(39174); //random port
+    tcp_header.destination_port = htons(parameters->destination_port);
+    tcp_header.sequence_number = htonl(parameters->sequence_number);
+    tcp_header.acqnowledgement_number = 0;
+    tcp_header.header_length_and_reserved = tcp_header.header_length_and_reserved | ((sizeof(struct tcp_header) / 4) << 4); //header length in 32-bit words (4 bytes each)
+    if (parameters->flags.syn) {
+        tcp_header.flags = tcp_header.flags | 1 << 1;
+    }
+    if (parameters->flags.rst) {
+        tcp_header.flags = tcp_header.flags | 1 << 2;
+    }
+    tcp_header.window = htons(parameters->window_size);
+    
+    //checksum calculation
+    struct ip_pseudo_header ip_pseudo_header;
+    memset(&ip_pseudo_header, 0, sizeof(struct ip_pseudo_header));
+    ip_pseudo_header.source_ip = ip_header->source_address;
+    ip_pseudo_header.destination_ip = ip_header->destination_address;
+    ip_pseudo_header.protocol = IPPROTO_TCP;
+    ip_pseudo_header.tcp_length = htons(sizeof(struct tcp_header));
+
+    uint8_t pseudo_tcp_packet[sizeof(struct ip_pseudo_header) + sizeof(struct tcp_header)];
+    
+    memset(pseudo_tcp_packet, 0, sizeof(pseudo_tcp_packet));
+    
+    memcpy(pseudo_tcp_packet, &ip_pseudo_header, sizeof(struct ip_pseudo_header));
+    memcpy(pseudo_tcp_packet + sizeof(struct ip_pseudo_header), &tcp_header, sizeof(struct tcp_header));
+    
+    tcp_header.checksum = calculate_checksum(pseudo_tcp_packet, sizeof(pseudo_tcp_packet));
+
+    memcpy(packet, &tcp_header, sizeof(struct tcp_header));
+}
+
+bool is_tcp_syn_set(struct tcp_header *tcp_header)
+{
+    return tcp_header->flags & 1 << 1;
+}
+
+bool is_tcp_ack_set(struct tcp_header *tcp_header)
+{
+    return tcp_header->flags & 1 << 4;
 }

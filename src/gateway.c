@@ -75,7 +75,7 @@ void request_gateway_mac(struct NetConfig *config) {
 
     send_packet(handle, arp_request, sizeof(arp_request));
     
-    const uint8_t *packet = get_single_packet(handle, filter, sizeof(struct ether_header) + sizeof(struct ether_arp), 1);
+    const uint8_t *packet = read_first_packet(handle, filter, sizeof(struct ether_header) + sizeof(struct ether_arp), 1);
     if (packet == NULL) {
         clean_exit_failure("Failed to get gateway mac");
     }

@@ -1,6 +1,7 @@
 #ifndef NET_H
 #define NET_H
 
+#include <stdbool.h>
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 
@@ -79,5 +80,50 @@ struct icmp_header
     uint16_t identifier;
     uint16_t sequence_number;
 };
+
+//length 20 bytes
+struct tcp_header
+{
+    uint16_t source_port;
+    uint16_t destination_port;
+    uint32_t sequence_number;
+    uint32_t acqnowledgement_number;
+    uint8_t header_length_and_reserved;
+    uint8_t flags;
+    uint16_t window;
+    uint16_t checksum;
+    uint16_t urgent_pointer;
+};
+
+struct ip_pseudo_header
+{
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    uint8_t reserved;
+    uint8_t protocol;
+    uint16_t tcp_length;
+};
+
+struct flags
+{
+    bool syn;
+    bool rst;
+};
+
+struct tcp_parameters
+{
+    uint16_t destination_port;
+    struct flags flags;
+    uint32_t sequence_number;
+    uint16_t window_size;
+};
+
+void init_tcp_parameters(struct tcp_parameters *parameters);
+
+void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet);
+
+bool is_tcp_syn_set(struct tcp_header *tcp_header);
+
+bool is_tcp_ack_set(struct tcp_header *tcp_header);
 
 #endif

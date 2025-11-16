@@ -1,12 +1,3 @@
 {
-    "files.associations": {
-        "debug.h": "c",
-        "if_ether.h": "c",
-        "ethernet.h": "c",
-        "resources.h": "c",
-        "if_packet.h": "c",
-        "ip.h": "c",
-        "host_up_check.h": "c",
-        "unistd.h": "c"
-    }
+    "makefile.configureOnOpen": false
 }

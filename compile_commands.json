@@ -1,0 +1,121 @@
+[
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/net.o",
+            "src/net.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/net.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/pcap_utils.o",
+            "src/pcap_utils.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/pcap_utils.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/utils.o",
+            "src/utils.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/utils.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/main.o",
+            "src/main.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/main.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/host_discovery.o",
+            "src/host_discovery.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/host_discovery.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/gateway.o",
+            "src/gateway.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/gateway.c"
+    },
+    {
+        "arguments": [
+            "gcc",
+            "-c",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DDEBUG=0",
+            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-o",
+            "objects/resources.o",
+            "src/resources.c"
+        ],
+        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "file": "src/resources.c"
+    }
+]
