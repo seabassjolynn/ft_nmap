@@ -3,7 +3,6 @@
 
 #include <unistd.h>
 
-#include "color_output.h"
 
 void free_resources();
 

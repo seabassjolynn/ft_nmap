@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <netinet/tcp.h>
+#include "color_output.h"
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -225,18 +226,21 @@ void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *param
     struct tcp_header tcp_header;
     memset(&tcp_header, 0, sizeof(struct tcp_header));
 
-    tcp_header.source_port = htons(39174); //random port
+    tcp_header.source_port = htons(42000); //random port
     tcp_header.destination_port = htons(parameters->destination_port);
     tcp_header.sequence_number = htonl(parameters->sequence_number);
     tcp_header.acqnowledgement_number = 0;
     tcp_header.header_length_and_reserved = tcp_header.header_length_and_reserved | ((sizeof(struct tcp_header) / 4) << 4); //header length in 32-bit words (4 bytes each)
     if (parameters->flags.syn) {
-        tcp_header.flags = tcp_header.flags | 1 << 1;
+        tcp_header.flags = tcp_header.flags | TCP_FLAG_SYN;
     }
     if (parameters->flags.rst) {
-        tcp_header.flags = tcp_header.flags | 1 << 2;
+        tcp_header.flags = tcp_header.flags | TCP_FLAG_RST;
     }
     tcp_header.window = htons(parameters->window_size);
+    tcp_header.max_segment_size_option.kind = MAX_SEGMENT_SIZE_OPTION_KIND;
+    tcp_header.max_segment_size_option.length = MAX_SEGMENT_SIZE_OPTION_LENGTH;
+    tcp_header.max_segment_size_option.max_segment_size = htons(MAX_SEGMENT_SIZE_OPTION_DEFAULT_VALUE);
     
     //checksum calculation
     struct ip_pseudo_header ip_pseudo_header;
@@ -260,10 +264,91 @@ void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *param
 
 bool is_tcp_syn_set(struct tcp_header *tcp_header)
 {
-    return tcp_header->flags & 1 << 1;
+    return tcp_header->flags & TCP_FLAG_SYN;
 }
 
 bool is_tcp_ack_set(struct tcp_header *tcp_header)
 {
-    return tcp_header->flags & 1 << 4;
+    return tcp_header->flags & TCP_FLAG_ACK;
+}
+
+bool is_tcp_rst_set(struct tcp_header *tcp_header)
+{
+    return tcp_header->flags & TCP_FLAG_RST;
+}
+
+char *tcp_display_string(struct tcp_header *tcp_header)
+{
+    static char packet_display[1024];
+    int offset = 0;
+
+    memset(packet_display, 0, sizeof(packet_display));
+    char *header_str = GREEN"TCP packet data:\n"COLOR_RESET;
+    offset = snprintf(packet_display, sizeof(packet_display), "%s", header_str);
+
+    // Source port
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Source Port: %u\n", ntohs(tcp_header->source_port));
+
+    // Destination port
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Destination Port: %u\n", ntohs(tcp_header->destination_port));
+
+    // Sequence number
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Sequence Number: %u\n", ntohl(tcp_header->sequence_number));
+
+    // Acknowledgement number
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Acknowledgement Number: %u\n", ntohl(tcp_header->acqnowledgement_number));
+
+    // Header length
+    uint8_t header_length = (tcp_header->header_length_and_reserved >> 4) * 4;
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Header Length: %u bytes\n", header_length);
+
+    // Flags
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Flags: ");
+    int flag_count = 0;
+    if (tcp_header->flags & TCP_FLAG_FIN) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+            "%sFIN", flag_count++ > 0 ? ", " : "");
+    }
+    if (tcp_header->flags & TCP_FLAG_SYN) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+            "%sSYN", flag_count++ > 0 ? ", " : "");
+    }
+    if (tcp_header->flags & TCP_FLAG_RST) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+            "%sRST", flag_count++ > 0 ? ", " : "");
+    }
+    if (tcp_header->flags & TCP_FLAG_ACK) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+            "%sACK", flag_count++ > 0 ? ", " : "");
+    }
+    if (flag_count == 0) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset, "None");
+    }
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset, "\n");
+
+    // Window size
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Window Size: %u\n", ntohs(tcp_header->window));
+
+    // Checksum
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Checksum: 0x%04x\n", ntohs(tcp_header->checksum));
+
+    // Urgent pointer
+    offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+        "  Urgent Pointer: %u\n", ntohs(tcp_header->urgent_pointer));
+
+    // Max segment size option (if present)
+    if (tcp_header->max_segment_size_option.kind == MAX_SEGMENT_SIZE_OPTION_KIND) {
+        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
+            "  Max Segment Size: %u\n", ntohs(tcp_header->max_segment_size_option.max_segment_size));
+    }
+
+    return packet_display;
 }

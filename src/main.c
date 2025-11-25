@@ -1,6 +1,7 @@
 #include "net.h"
 #include "gateway.h"
 #include "host_discovery.h"
+#include "scan_syn.h"
 
 int main() {
     struct NetConfig net_config;
@@ -15,5 +16,6 @@ int main() {
     request_gateway_mac(&net_config);
     is_host_up(&net_config);
     
+    scan_syn(&net_config, 80);
     return 0;
 }

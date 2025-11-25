@@ -51,10 +51,12 @@ void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip
 
 void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
 
-void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
-
 #define ICMP_TYPE_TIMESTAMP_RESPONSE 14
 #define ICMP_TYPE_ECHO_REPLY 0
+#define ICMP_TYPE_DESTINATION_UNREACHABLE 3
+#define ICMP_DESTINATION_UNREACHABLE_PACKET_LEN 12
+
+void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
 
 void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
 
@@ -81,7 +83,25 @@ struct icmp_header
     uint16_t sequence_number;
 };
 
-//length 20 bytes
+#define MAX_SEGMENT_SIZE_OPTION_KIND 2
+#define MAX_SEGMENT_SIZE_OPTION_LENGTH 4
+#define MAX_SEGMENT_SIZE_OPTION_DEFAULT_VALUE 1460
+
+#define DEFAULT_WINDOW_SIZE 2048
+
+#define TCP_FLAG_FIN 1
+#define TCP_FLAG_SYN 1 << 1
+#define TCP_FLAG_RST 1 << 2
+#define TCP_FLAG_ACK 1 << 4
+
+
+struct max_segment_size_option
+{
+    uint8_t kind;
+    uint8_t length;
+    uint16_t max_segment_size;
+};
+
 struct tcp_header
 {
     uint16_t source_port;
@@ -93,6 +113,7 @@ struct tcp_header
     uint16_t window;
     uint16_t checksum;
     uint16_t urgent_pointer;
+    struct max_segment_size_option max_segment_size_option;
 };
 
 struct ip_pseudo_header
@@ -108,6 +129,7 @@ struct flags
 {
     bool syn;
     bool rst;
+    bool ack;
 };
 
 struct tcp_parameters
@@ -125,5 +147,9 @@ void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *param
 bool is_tcp_syn_set(struct tcp_header *tcp_header);
 
 bool is_tcp_ack_set(struct tcp_header *tcp_header);
+
+bool is_tcp_rst_set(struct tcp_header *tcp_header);
+
+char *tcp_display_string(struct tcp_header *tcp_header);
 
 #endif

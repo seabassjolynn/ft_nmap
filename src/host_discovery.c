@@ -52,8 +52,7 @@ static bool ping_timestamp_remote(const struct NetConfig *config, pcap_t *handle
     return received_packet != NULL;
 }
 
-
-static bool probe_with_tcp_syn(const struct NetConfig *config, uint16_t destination_port, pcap_t *handle)
+static bool probe_with_tcp_syn_to_port_80(const struct NetConfig *config, pcap_t *handle)
 {
     uint8_t packet[sizeof(struct ether_header) + sizeof(struct ip_header) + sizeof(struct tcp_header)];
     memset(&packet, 0, sizeof(packet));
@@ -66,7 +65,7 @@ static bool probe_with_tcp_syn(const struct NetConfig *config, uint16_t destinat
     
     struct tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
-    tcp_parameters.destination_port = destination_port;
+    tcp_parameters.destination_port = 80;
     tcp_parameters.flags.syn = true;
     tcp_parameters.window_size = 1024;
     tcp_parameters.sequence_number = 0;
@@ -76,22 +75,53 @@ static bool probe_with_tcp_syn(const struct NetConfig *config, uint16_t destinat
     write_tcp_packet(ip_header, &tcp_parameters, packet + tcp_packet_offset);
     
     send_packet(handle, packet, sizeof(packet));
-    
-    char *filter = fstring("tcp and tcp src port %d and src host %s", tcp_parameters.destination_port, inet_ntoa(config->target_ip));
+    int options_syn_ack = 0;
+    options_syn_ack = options_syn_ack | 1 << 1; //syn flag
+    options_syn_ack = options_syn_ack | 1 << 4; //ack flag
+    char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[13:1] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_syn_ack);
     const uint8_t *received_packet = read_first_packet(handle, filter, sizeof(packet), 1);
     if (received_packet != NULL) {
-        struct tcp_header *tcp_header = (struct tcp_header *) (received_packet + tcp_packet_offset);
-        
-        if (is_tcp_ack_set(tcp_header) && is_tcp_syn_set(tcp_header)) {
-            init_tcp_parameters(&tcp_parameters);
-            tcp_parameters.destination_port = destination_port;
-            tcp_parameters.flags.rst = true;
-            tcp_parameters.sequence_number = 1;
-            tcp_parameters.window_size = 0;
-            write_tcp_packet(ip_header, &tcp_parameters, packet + tcp_packet_offset);
-            send_packet(handle, packet, sizeof(packet));    
-        }
+        init_tcp_parameters(&tcp_parameters);
+        tcp_parameters.destination_port = 80;
+        tcp_parameters.flags.rst = true;
+        tcp_parameters.flags.ack = true;
+        tcp_parameters.window_size = 0;
+        tcp_parameters.sequence_number = 1;
+        write_tcp_packet(ip_header, &tcp_parameters, packet + tcp_packet_offset);
+        send_packet(handle, packet, sizeof(packet));
     }
+
+    return received_packet != NULL;
+}
+
+static bool probe_with_tcp_syn_to_port_443(const struct NetConfig *config, pcap_t *handle)
+{
+    uint8_t packet[sizeof(struct ether_header) + sizeof(struct ip_header) + sizeof(struct tcp_header)];
+    memset(&packet, 0, sizeof(packet));
+    
+    write_local_to_gateway_ethernet_header(config, ETHERTYPE_IP, packet);
+    
+    write_local_to_remote_ip_header(config, IPPROTO_TCP, sizeof(struct tcp_header), packet + sizeof(struct ether_header));
+    
+    struct ip_header *ip_header = (struct ip_header *) (packet + sizeof(struct ether_header));
+    
+    struct tcp_parameters tcp_parameters;
+    init_tcp_parameters(&tcp_parameters);
+    tcp_parameters.destination_port = 443;
+    tcp_parameters.flags.syn = true;
+    tcp_parameters.window_size = 1024;
+    tcp_parameters.sequence_number = 0;
+
+    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct ip_header);
+    
+    write_tcp_packet(ip_header, &tcp_parameters, packet + tcp_packet_offset);
+    
+    send_packet(handle, packet, sizeof(packet));
+    int options_rst = 0;
+    options_rst = options_rst | 1 << 2; //rst flag
+    options_rst = options_rst | 1 << 4; //ack flag
+    char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[13:1] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_rst);
+    const uint8_t *received_packet = read_first_packet(handle, filter, sizeof(packet) - sizeof(struct max_segment_size_option), 1);
     return received_packet != NULL;
 }
 
@@ -113,14 +143,14 @@ bool is_host_up(const struct NetConfig *config) {
         printf("Host discovery: timestamp response received %s\n", timestamp_response == true ? "true" : "false");
     }
     
-    bool tcp_syn_80_response = probe_with_tcp_syn(config, 80, handle);
+    bool tcp_syn_80_response = probe_with_tcp_syn_to_port_80(config, handle);
     
 
     if (DEBUG) {
         printf("Host discovery: tcp syn 80 response received %s\n", tcp_syn_80_response == true ? "true" : "false");
     }
 
-    bool tcp_syn_443_response = probe_with_tcp_syn(config, 443, handle);
+    bool tcp_syn_443_response = probe_with_tcp_syn_to_port_443(config, handle);
 
     if (DEBUG) {
         printf("Host discovery: tcp syn 443 response received %s\n", tcp_syn_443_response == true ? "true" : "false");
