@@ -4,6 +4,7 @@
 #include <string.h>
 #include "pcap_utils.h"
 #include "utils.h"
+#include "color_output.h"
 
 static struct in_addr default_gateway_ip(void) {
     struct in_addr gateway_in_addr;
@@ -51,7 +52,7 @@ static struct in_addr default_gateway_ip(void) {
     }
 
     if (DEBUG) {
-        printf("Getting default gateway ip: found default gateway ip %s\n", inet_ntoa(gateway_in_addr));
+        printf(GREEN"Getting default gateway ip: found default gateway ip %s\n"COLOR_RESET, inet_ntoa(gateway_in_addr));
     }
     
     return gateway_in_addr;
@@ -83,7 +84,7 @@ void request_gateway_mac(struct NetConfig *config) {
     memcpy(config->gateway_mac, arp_response->arp_sha, ETH_ALEN);
     
     if (DEBUG) {
-        printf("Getting default gateway mac: found gateway mac: %s\n", mac_to_string(config->gateway_mac));
+        printf(GREEN"Getting default gateway mac: found gateway mac: %s\n"COLOR_RESET, mac_to_string(config->gateway_mac));
     }
     
     pcap_close(handle);

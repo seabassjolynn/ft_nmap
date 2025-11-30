@@ -7,7 +7,7 @@ char *fstring(char *format, ...)
 {
     static char buffer[1024];
     memset(buffer, 0, sizeof(buffer));
-    
+
     va_list args;
     va_start(args, format);
     unsigned long count_char_writen = vsnprintf(buffer, sizeof(buffer), format, args);

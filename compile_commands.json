@@ -8,12 +8,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/net.o",
             "src/net.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/net.c"
     },
     {
@@ -25,12 +25,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/pcap_utils.o",
             "src/pcap_utils.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/pcap_utils.c"
     },
     {
@@ -42,12 +42,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/utils.o",
             "src/utils.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/utils.c"
     },
     {
@@ -59,12 +59,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/main.o",
             "src/main.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/main.c"
     },
     {
@@ -76,12 +76,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/host_discovery.o",
             "src/host_discovery.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/host_discovery.c"
     },
     {
@@ -93,12 +93,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/gateway.o",
             "src/gateway.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/gateway.c"
     },
     {
@@ -110,12 +110,12 @@
             "-Wextra",
             "-Werror",
             "-DDEBUG=0",
-            "-I/home/oleg-tokmachyov/Desktop/ft_nmap/headers",
+            "-I/home/oleg-tokmachyov/Desktop/school/ft_nmap/headers",
             "-o",
             "objects/resources.o",
             "src/resources.c"
         ],
-        "directory": "/home/oleg-tokmachyov/Desktop/ft_nmap",
+        "directory": "/home/oleg-tokmachyov/Desktop/school/ft_nmap",
         "file": "src/resources.c"
     }
 ]

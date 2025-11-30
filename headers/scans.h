@@ -1,8 +1,26 @@
-#ifndef SCANS_H
-#define SCANS_H
+#ifndef SCAN_SYN_H
+#define SCAN_SYN_H
 
-#define PORT_STATE_OPEN 0
-#define PORT_STATE_CLOSED 1
-#define PORT_STATE_FILTERED 2
+#include "net.h"
+
+enum port_state
+{
+    OPEN,
+    CLOSED,
+    FILTERED,
+    OPEN_FILTERED,
+    UNKNOWN
+};
+
+enum scan_type
+{
+    SCAN_FIN,
+    SCAN_NULL,
+    SCAN_XMAS
+};
+
+enum port_state scan_syn(const struct NetConfig *config, uint16_t port);
+
+enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, uint16_t port);
 
 #endif

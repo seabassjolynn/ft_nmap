@@ -40,6 +40,9 @@ struct in_addr local_ip_for_internet_connection(void) {
     }
 
     close(socket_fd);
+    if (DEBUG) {
+        printf(GREEN"Local ip for internet connection: %s\n"COLOR_RESET, inet_ntoa(local_ip.sin_addr));
+    }
     return local_ip.sin_addr;
 }
 
@@ -68,6 +71,10 @@ void device_for_internet_connection(struct in_addr *local_ip, char *device_name_
     if (ifaaddr_tmp == NULL) {
         clean_exit_failure("Figuring out device for internet connection. Failed to find device");
     }
+    
+    if (DEBUG) {
+        printf(GREEN"Device for internet connection: %s\n"COLOR_RESET, device_name_out);
+    }
 }
 
 void mac_address_for_device(char *device_name, uint8_t *mac_address_out) {
@@ -92,6 +99,10 @@ void mac_address_for_device(char *device_name, uint8_t *mac_address_out) {
     if (ifaddr_tmp == NULL) {
         clean_exit_failure("Figuring out mac address for device. Failed to find device");
     }
+
+    if (DEBUG) {
+        printf(GREEN"Mac address for device: %s\n"COLOR_RESET, mac_to_string(mac_address_out));
+    }
 }
 
 void print_mac(uint8_t *arr)
@@ -106,7 +117,7 @@ char * mac_to_string(uint8_t *arr)
     return str;
 }
 
-void write_local_to_gateway_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
+void write_ethernet_header_local_to_gateway(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
     memcpy(eth->ether_dhost, config->gateway_mac, ETH_ALEN);
@@ -164,7 +175,7 @@ static uint16_t calculate_checksum(void *addr, int len)
     return ~sum;
 }
 
-void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer)
+void write_ip_header_local_to_remote(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer)
 {
     struct  ip_header *ip_header = (struct ip_header *)buffer;
     ip_header->ihl_and_version = 0x45;
@@ -215,13 +226,12 @@ void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned l
 void init_tcp_parameters(struct tcp_parameters *parameters)
 {
     parameters->destination_port = 0;
-    parameters->flags.syn = false;
-    parameters->flags.rst = false;
+    parameters->flags = 0;
     parameters->sequence_number = 0;
-    parameters->window_size = 0;
+    parameters->window_size = DEFAULT_WINDOW_SIZE;
 }
 
-void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet)
+void write_tcp_header(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet)
 {
     struct tcp_header tcp_header;
     memset(&tcp_header, 0, sizeof(struct tcp_header));
@@ -229,18 +239,11 @@ void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *param
     tcp_header.source_port = htons(42000); //random port
     tcp_header.destination_port = htons(parameters->destination_port);
     tcp_header.sequence_number = htonl(parameters->sequence_number);
-    tcp_header.acqnowledgement_number = 0;
+    tcp_header.acqnowledgement_number = htonl(parameters->ack_number);
     tcp_header.header_length_and_reserved = tcp_header.header_length_and_reserved | ((sizeof(struct tcp_header) / 4) << 4); //header length in 32-bit words (4 bytes each)
-    if (parameters->flags.syn) {
-        tcp_header.flags = tcp_header.flags | TCP_FLAG_SYN;
-    }
-    if (parameters->flags.rst) {
-        tcp_header.flags = tcp_header.flags | TCP_FLAG_RST;
-    }
+    tcp_header.flags = parameters->flags;
+    
     tcp_header.window = htons(parameters->window_size);
-    tcp_header.max_segment_size_option.kind = MAX_SEGMENT_SIZE_OPTION_KIND;
-    tcp_header.max_segment_size_option.length = MAX_SEGMENT_SIZE_OPTION_LENGTH;
-    tcp_header.max_segment_size_option.max_segment_size = htons(MAX_SEGMENT_SIZE_OPTION_DEFAULT_VALUE);
     
     //checksum calculation
     struct ip_pseudo_header ip_pseudo_header;
@@ -343,12 +346,6 @@ char *tcp_display_string(struct tcp_header *tcp_header)
     // Urgent pointer
     offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
         "  Urgent Pointer: %u\n", ntohs(tcp_header->urgent_pointer));
-
-    // Max segment size option (if present)
-    if (tcp_header->max_segment_size_option.kind == MAX_SEGMENT_SIZE_OPTION_KIND) {
-        offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
-            "  Max Segment Size: %u\n", ntohs(tcp_header->max_segment_size_option.max_segment_size));
-    }
 
     return packet_display;
 }

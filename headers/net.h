@@ -43,13 +43,13 @@ struct NetConfig {
     uint16_t target_port;
 };
 
-void write_local_to_gateway_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
+void write_ethernet_header_local_to_gateway(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
 
 void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
 
 void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip, uint8_t *buffer);
 
-void write_local_to_remote_ip_header(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
+void write_ip_header_local_to_remote(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
 
 #define ICMP_TYPE_TIMESTAMP_RESPONSE 14
 #define ICMP_TYPE_ECHO_REPLY 0
@@ -83,24 +83,14 @@ struct icmp_header
     uint16_t sequence_number;
 };
 
-#define MAX_SEGMENT_SIZE_OPTION_KIND 2
-#define MAX_SEGMENT_SIZE_OPTION_LENGTH 4
-#define MAX_SEGMENT_SIZE_OPTION_DEFAULT_VALUE 1460
-
 #define DEFAULT_WINDOW_SIZE 2048
 
 #define TCP_FLAG_FIN 1
 #define TCP_FLAG_SYN 1 << 1
 #define TCP_FLAG_RST 1 << 2
+#define TCP_FLAG_PSH 1 << 3
 #define TCP_FLAG_ACK 1 << 4
-
-
-struct max_segment_size_option
-{
-    uint8_t kind;
-    uint8_t length;
-    uint16_t max_segment_size;
-};
+#define TCP_FLAG_URG 1 << 5
 
 struct tcp_header
 {
@@ -113,8 +103,8 @@ struct tcp_header
     uint16_t window;
     uint16_t checksum;
     uint16_t urgent_pointer;
-    struct max_segment_size_option max_segment_size_option;
 };
+
 
 struct ip_pseudo_header
 {
@@ -125,24 +115,18 @@ struct ip_pseudo_header
     uint16_t tcp_length;
 };
 
-struct flags
-{
-    bool syn;
-    bool rst;
-    bool ack;
-};
-
 struct tcp_parameters
 {
     uint16_t destination_port;
-    struct flags flags;
+    uint8_t flags;
     uint32_t sequence_number;
     uint16_t window_size;
+    uint32_t ack_number;
 };
 
 void init_tcp_parameters(struct tcp_parameters *parameters);
 
-void write_tcp_packet(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet);
+void write_tcp_header(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet);
 
 bool is_tcp_syn_set(struct tcp_header *tcp_header);
 
@@ -151,5 +135,7 @@ bool is_tcp_ack_set(struct tcp_header *tcp_header);
 bool is_tcp_rst_set(struct tcp_header *tcp_header);
 
 char *tcp_display_string(struct tcp_header *tcp_header);
+
+#define PACKET_READING_TIMEOUT_SEC_DEFAULT 1
 
 #endif

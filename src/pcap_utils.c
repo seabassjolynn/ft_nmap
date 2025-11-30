@@ -78,7 +78,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
 
 void set_packet_filter(pcap_t *handle, char *filter) {
     if (DEBUG) {
-        printf("Setting packet filter: filter: %s\n", filter);
+        printf("Setting filter for packet reading: %s\n", filter);
     }
     
     struct bpf_program program;
