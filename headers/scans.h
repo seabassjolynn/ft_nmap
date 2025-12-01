@@ -9,6 +9,7 @@ enum port_state
     CLOSED,
     FILTERED,
     OPEN_FILTERED,
+    UNFILTERED,
     UNKNOWN
 };
 
@@ -22,5 +23,7 @@ enum scan_type
 enum port_state scan_syn(const struct NetConfig *config, uint16_t port);
 
 enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, uint16_t port);
+
+enum port_state scan_ack(const struct NetConfig *config, uint16_t port);
 
 #endif
