@@ -2,6 +2,7 @@
 #define NET_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 
@@ -33,7 +34,7 @@ void print_mac(uint8_t *arr);
 
 char * mac_to_string(uint8_t *arr);
 
-struct NetConfig {
+struct s_net_config {
     char device_name[30];
     uint8_t device_mac[6];
     struct in_addr local_ip;
@@ -43,13 +44,13 @@ struct NetConfig {
     uint16_t target_port;
 };
 
-void write_ethernet_header_local_to_gateway(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
+void write_ethernet_header_local_to_gateway(const struct s_net_config *config, uint16_t ether_type, uint8_t *buffer);
 
-void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer);
+void write_local_broadcast_ethernet_header(const struct s_net_config *config, uint16_t ether_type, uint8_t *buffer);
 
-void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip, uint8_t *buffer);
+void write_arp_request(const struct s_net_config *config, struct in_addr *target_ip, uint8_t *buffer);
 
-void write_ip_header_local_to_remote(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
+void write_ip_header_local_to_remote(const struct s_net_config *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer);
 
 #define ICMP_TYPE_TIMESTAMP_RESPONSE 14
 #define ICMP_TYPE_ECHO_REPLY 0
@@ -60,7 +61,7 @@ void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long d
 
 void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer);
 
-struct ip_header 
+struct s_ip_header 
 {
     uint8_t ihl_and_version;
     uint8_t tos;
@@ -74,13 +75,23 @@ struct ip_header
     uint32_t destination_address;
 };
 
-struct icmp_header
+struct s_icmp_header
 {
     uint8_t type;
     uint8_t code;
     uint16_t checksum;
     uint16_t identifier;
     uint16_t sequence_number;
+};
+
+struct s_icmp_destination_unreachable_header
+{
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint32_t unused;
+    uint8_t original_ip_header[20];
+    uint8_t original_data[8];
 };
 
 #define DEFAULT_WINDOW_SIZE 2048
@@ -92,30 +103,29 @@ struct icmp_header
 #define TCP_FLAG_ACK 1 << 4
 #define TCP_FLAG_URG 1 << 5
 
-struct tcp_header
+struct s_tcp_header
 {
     uint16_t source_port;
     uint16_t destination_port;
     uint32_t sequence_number;
     uint32_t acqnowledgement_number;
-    uint8_t header_length_and_reserved;
+    uint8_t header_words_len_and_reserved;
     uint8_t flags;
     uint16_t window;
     uint16_t checksum;
     uint16_t urgent_pointer;
 };
 
-
-struct ip_pseudo_header
+struct s_ip_pseudo_header
 {
     uint32_t source_ip;
     uint32_t destination_ip;
     uint8_t reserved;
     uint8_t protocol;
-    uint16_t tcp_length;
+    uint16_t payload_bytes_length;
 };
 
-struct tcp_parameters
+struct s_tcp_parameters
 {
     uint16_t destination_port;
     uint8_t flags;
@@ -124,17 +134,27 @@ struct tcp_parameters
     uint32_t ack_number;
 };
 
-void init_tcp_parameters(struct tcp_parameters *parameters);
+struct s_udp_header
+{
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint16_t total_length;
+    uint16_t checksum;
+};
 
-void write_tcp_header(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet);
+void init_tcp_parameters(struct s_tcp_parameters *parameters);
 
-bool is_tcp_syn_set(struct tcp_header *tcp_header);
+void write_tcp_header(struct  s_ip_header *ip_header, struct s_tcp_parameters *parameters, uint8_t *packet);
 
-bool is_tcp_ack_set(struct tcp_header *tcp_header);
+bool is_tcp_syn_set(struct s_tcp_header *tcp_header);
 
-bool is_tcp_rst_set(struct tcp_header *tcp_header);
+bool is_tcp_ack_set(struct s_tcp_header *tcp_header);
 
-char *tcp_display_string(struct tcp_header *tcp_header);
+bool is_tcp_rst_set(struct s_tcp_header *tcp_header);
+
+char *tcp_display_string(struct s_tcp_header *tcp_header);
+
+void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port);
 
 #define PACKET_READING_TIMEOUT_SEC_DEFAULT 1
 

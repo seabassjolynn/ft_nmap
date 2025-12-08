@@ -117,7 +117,7 @@ char * mac_to_string(uint8_t *arr)
     return str;
 }
 
-void write_ethernet_header_local_to_gateway(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
+void write_ethernet_header_local_to_gateway(const struct s_net_config *config, uint16_t ether_type, uint8_t *buffer)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
     memcpy(eth->ether_dhost, config->gateway_mac, ETH_ALEN);
@@ -125,7 +125,7 @@ void write_ethernet_header_local_to_gateway(const struct NetConfig *config, uint
     eth->ether_type = htons(ether_type);
 }
 
-void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint16_t ether_type, uint8_t *buffer)
+void write_local_broadcast_ethernet_header(const struct s_net_config *config, uint16_t ether_type, uint8_t *buffer)
 {
     struct ether_header *eth = (struct ether_header *)buffer;
     memset(eth->ether_dhost, 0xFF, ETH_ALEN);
@@ -133,7 +133,7 @@ void write_local_broadcast_ethernet_header(const struct NetConfig *config, uint1
     eth->ether_type = htons(ether_type);
 }
 
-void write_arp_request(const struct NetConfig *config, struct in_addr *target_ip, uint8_t *buffer)
+void write_arp_request(const struct s_net_config *config, struct in_addr *target_ip, uint8_t *buffer)
 {
     struct ether_arp *arp_request = (struct ether_arp *)buffer;
     
@@ -175,9 +175,9 @@ static uint16_t calculate_checksum(void *addr, int len)
     return ~sum;
 }
 
-void write_ip_header_local_to_remote(const struct NetConfig *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer)
+void write_ip_header_local_to_remote(const struct s_net_config *config, uint8_t protocol, uint16_t payload_len, uint8_t *buffer)
 {
-    struct  ip_header *ip_header = (struct ip_header *)buffer;
+    struct  s_ip_header *ip_header = (struct s_ip_header *)buffer;
     ip_header->ihl_and_version = 0x45;
     ip_header->tos = 0;
     ip_header->total_len = htons(5 * 4 + payload_len);
@@ -188,42 +188,42 @@ void write_ip_header_local_to_remote(const struct NetConfig *config, uint8_t pro
     ip_header->checksum = 0;
     ip_header->source_address = config->local_ip.s_addr;
     ip_header->destination_address = config->target_ip.s_addr;
-    uint16_t checksum = calculate_checksum(ip_header, sizeof(struct ip_header));
+    uint16_t checksum = calculate_checksum(ip_header, sizeof(struct s_ip_header));
     ip_header->checksum = checksum;
 };
 
 void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer)
 {
-    struct icmp_header *icmp_header = (struct icmp_header *)buffer;
+    struct s_icmp_header *icmp_header = (struct s_icmp_header *)buffer;
     icmp_header->type = 8;
     icmp_header->code = 0;
     icmp_header->checksum = 0;
     icmp_header->identifier = htons(identifier);
     icmp_header->sequence_number = 0;
 
-    memcpy(buffer + sizeof(struct icmp_header), data, data_len);
+    memcpy(buffer + sizeof(struct s_icmp_header), data, data_len);
 
-    uint16_t checksum = calculate_checksum(buffer, sizeof(struct icmp_header) + data_len);
+    uint16_t checksum = calculate_checksum(buffer, sizeof(struct s_icmp_header) + data_len);
     
     icmp_header -> checksum = checksum;
 }
 
 void write_icmp_timestamp_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer) {
-    struct icmp_header *icmp_header = (struct icmp_header *)buffer;
+    struct s_icmp_header *icmp_header = (struct s_icmp_header *)buffer;
     icmp_header->type = 13;
     icmp_header->code = 0;
     icmp_header->checksum = 0;
     icmp_header->identifier = htons(identifier);
     icmp_header->sequence_number = 0;
 
-    memcpy(buffer + sizeof(struct icmp_header), data, data_len);
+    memcpy(buffer + sizeof(struct s_icmp_header), data, data_len);
 
-    uint16_t checksum = calculate_checksum(buffer, sizeof(struct icmp_header) + data_len);
+    uint16_t checksum = calculate_checksum(buffer, sizeof(struct s_icmp_header) + data_len);
     
     icmp_header -> checksum = checksum;
 }
 
-void init_tcp_parameters(struct tcp_parameters *parameters)
+void init_tcp_parameters(struct s_tcp_parameters *parameters)
 {
     parameters->destination_port = 0;
     parameters->flags = 0;
@@ -231,56 +231,82 @@ void init_tcp_parameters(struct tcp_parameters *parameters)
     parameters->window_size = DEFAULT_WINDOW_SIZE;
 }
 
-void write_tcp_header(struct  ip_header *ip_header, struct tcp_parameters *parameters, uint8_t *packet)
+static struct s_ip_pseudo_header create_ip_pseudo_header(struct  s_ip_header *ip_header, uint8_t protocol, uint16_t payload_bytes_length)
 {
-    struct tcp_header tcp_header;
-    memset(&tcp_header, 0, sizeof(struct tcp_header));
+    static struct s_ip_pseudo_header ip_pseudo_header;
+
+    memset(&ip_pseudo_header, 0, sizeof(struct s_ip_pseudo_header));
+
+    ip_pseudo_header.source_ip = ip_header->source_address;
+    ip_pseudo_header.destination_ip = ip_header->destination_address;
+    ip_pseudo_header.protocol = protocol;
+    ip_pseudo_header.payload_bytes_length = htons(payload_bytes_length);
+
+    return ip_pseudo_header;
+}
+
+void write_tcp_header(struct  s_ip_header *ip_header, struct s_tcp_parameters *parameters, uint8_t *packet)
+{
+    struct s_tcp_header tcp_header;
+    memset(&tcp_header, 0, sizeof(struct s_tcp_header));
 
     tcp_header.source_port = htons(42000); //random port
     tcp_header.destination_port = htons(parameters->destination_port);
     tcp_header.sequence_number = htonl(parameters->sequence_number);
     tcp_header.acqnowledgement_number = htonl(parameters->ack_number);
-    tcp_header.header_length_and_reserved = tcp_header.header_length_and_reserved | ((sizeof(struct tcp_header) / 4) << 4); //header length in 32-bit words (4 bytes each)
+    tcp_header.header_words_len_and_reserved = tcp_header.header_words_len_and_reserved | ((sizeof(struct s_tcp_header) / 4) << 4); //header length in 32-bit words (4 bytes each)
     tcp_header.flags = parameters->flags;
     
     tcp_header.window = htons(parameters->window_size);
     
     //checksum calculation
-    struct ip_pseudo_header ip_pseudo_header;
-    memset(&ip_pseudo_header, 0, sizeof(struct ip_pseudo_header));
-    ip_pseudo_header.source_ip = ip_header->source_address;
-    ip_pseudo_header.destination_ip = ip_header->destination_address;
-    ip_pseudo_header.protocol = IPPROTO_TCP;
-    ip_pseudo_header.tcp_length = htons(sizeof(struct tcp_header));
+    struct s_ip_pseudo_header ip_pseudo_header = create_ip_pseudo_header(ip_header, IPPROTO_TCP, sizeof(struct s_tcp_header));
 
-    uint8_t pseudo_tcp_packet[sizeof(struct ip_pseudo_header) + sizeof(struct tcp_header)];
+    uint8_t pseudo_tcp_packet[sizeof(struct s_ip_pseudo_header) + sizeof(struct s_tcp_header)];
     
     memset(pseudo_tcp_packet, 0, sizeof(pseudo_tcp_packet));
     
-    memcpy(pseudo_tcp_packet, &ip_pseudo_header, sizeof(struct ip_pseudo_header));
-    memcpy(pseudo_tcp_packet + sizeof(struct ip_pseudo_header), &tcp_header, sizeof(struct tcp_header));
+    memcpy(pseudo_tcp_packet, &ip_pseudo_header, sizeof(struct s_ip_pseudo_header));
+    memcpy(pseudo_tcp_packet + sizeof(struct s_ip_pseudo_header), &tcp_header, sizeof(struct s_tcp_header));
     
     tcp_header.checksum = calculate_checksum(pseudo_tcp_packet, sizeof(pseudo_tcp_packet));
 
-    memcpy(packet, &tcp_header, sizeof(struct tcp_header));
+    memcpy(packet, &tcp_header, sizeof(struct s_tcp_header));
 }
 
-bool is_tcp_syn_set(struct tcp_header *tcp_header)
+void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port)
+{
+    struct s_udp_header *udp_header = (struct s_udp_header *)packet;
+    udp_header->src_port = htons(42000); //random port
+    udp_header->dst_port = htons(destination_port);
+    udp_header->total_length = htons(sizeof(struct s_udp_header));
+    udp_header->checksum = 0;
+
+    struct s_ip_pseudo_header ip_pseudo_header = create_ip_pseudo_header(ip_header, IPPROTO_UDP, sizeof(struct s_udp_header));
+    uint8_t pseudo_udp_packet[sizeof(struct s_ip_pseudo_header) + sizeof(struct s_udp_header)];
+    memset(pseudo_udp_packet, 0, sizeof(pseudo_udp_packet));
+    memcpy(pseudo_udp_packet, &ip_pseudo_header, sizeof(struct s_ip_pseudo_header));
+    memcpy(pseudo_udp_packet + sizeof(struct s_ip_pseudo_header), udp_header, sizeof(struct s_udp_header));
+    udp_header->checksum = calculate_checksum(pseudo_udp_packet, sizeof(pseudo_udp_packet));
+    memcpy(packet, udp_header, sizeof(struct s_udp_header));
+}
+
+bool is_tcp_syn_set(struct s_tcp_header *tcp_header)
 {
     return tcp_header->flags & TCP_FLAG_SYN;
 }
 
-bool is_tcp_ack_set(struct tcp_header *tcp_header)
+bool is_tcp_ack_set(struct s_tcp_header *tcp_header)
 {
     return tcp_header->flags & TCP_FLAG_ACK;
 }
 
-bool is_tcp_rst_set(struct tcp_header *tcp_header)
+bool is_tcp_rst_set(struct s_tcp_header *tcp_header)
 {
     return tcp_header->flags & TCP_FLAG_RST;
 }
 
-char *tcp_display_string(struct tcp_header *tcp_header)
+char *tcp_display_string(struct s_tcp_header *tcp_header)
 {
     static char packet_display[1024];
     int offset = 0;
@@ -306,7 +332,7 @@ char *tcp_display_string(struct tcp_header *tcp_header)
         "  Acknowledgement Number: %u\n", ntohl(tcp_header->acqnowledgement_number));
 
     // Header length
-    uint8_t header_length = (tcp_header->header_length_and_reserved >> 4) * 4;
+    uint8_t header_length = (tcp_header->header_words_len_and_reserved >> 4) * 4;
     offset += snprintf(packet_display + offset, sizeof(packet_display) - offset,
         "  Header Length: %u bytes\n", header_length);
 

@@ -58,7 +58,7 @@ static struct in_addr default_gateway_ip(void) {
     return gateway_in_addr;
 }
 
-void request_gateway_mac(struct NetConfig *config) {
+void request_gateway_mac(struct s_net_config *config) {
     struct in_addr gateway_ip = default_gateway_ip();
     
     if (DEBUG) {

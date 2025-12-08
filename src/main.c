@@ -4,7 +4,9 @@
 #include "scans.h"
 
 int main() {
-    struct NetConfig net_config;
+    //TODO: handle ICMP port unreachable response types
+    //TODO: filter ICMP packets based on icmp reply data (there could be many icmp replies commit back, we need to differenciate them)
+    struct s_net_config net_config;
     net_config.local_ip = local_ip_for_internet_connection();
     net_config.target_ip.s_addr = inet_addr("45.33.32.156");
     //45.33.32.156 - scanme.nmap.org

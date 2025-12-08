@@ -20,10 +20,10 @@ enum scan_type
     SCAN_XMAS
 };
 
-enum port_state scan_syn(const struct NetConfig *config, uint16_t port);
+enum port_state scan_syn(const struct s_net_config *config, uint16_t port);
 
-enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, uint16_t port);
+enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port);
 
-enum port_state scan_ack(const struct NetConfig *config, uint16_t port);
+enum port_state scan_ack(const struct s_net_config *config, uint16_t port);
 
 #endif

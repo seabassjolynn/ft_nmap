@@ -100,7 +100,7 @@ void set_packet_filter(pcap_t *handle, char *filter) {
     pcap_freecode(&program);
 }
 
-const uint8_t *read_first_packet(pcap_t *handle, char *filter, bpf_u_int32 expected_min_packet_len, unsigned int timeout_sec)
+void read_first_packet(pcap_t *handle, char *filter, struct s_read_packet_result *result, unsigned int timeout_sec)
 {
     set_packet_filter(handle, filter);
     
@@ -108,24 +108,22 @@ const uint8_t *read_first_packet(pcap_t *handle, char *filter, bpf_u_int32 expec
     alarm(timeout_sec);
     signal(SIGALRM, alarm_handler);
     
-    int result = pcap_loop(handle, 1, packet_handler, NULL); //if packet is read successfully, packet_handler is called and packet and header are set. If timeout, alarm_handler is called and packet_handler is not called.
-    if (result == PCAP_ERROR_BREAK) //loop was terminated by timeout -> alarm_handler was called
+    int completion_status = pcap_loop(handle, 1, packet_handler, NULL); //cnt == 1 is how many packets are read,if packet is read successfully, packet_handler is called and packet and header are set. If timeout, alarm_handler is called and packet_handler is not called.
+    if (completion_status == PCAP_ERROR_BREAK) //loop was terminated by timeout -> alarm_handler was called
     {
         g_packet = NULL;
-        g_pkthdr = NULL;
+        g_pkthdr = NULL; //this structure has caplen. The packet may be truncated, so this caplen - is actual length of the packet. Packet is truncated, due to setups of the handle - there the max lengh of packet may be specified.
         g_handle = NULL;
-        return NULL;
-    } else if (result == PCAP_ERROR_NOT_ACTIVATED)
+    } else if (completion_status == PCAP_ERROR_NOT_ACTIVATED)
     {
         clean_exit_failure("Reading packet: attemt to read from handle that was not activated");
-    } else if (result == PCAP_ERROR)
+    } else if (completion_status == PCAP_ERROR)
     {
         clean_exit_failure("Reading packet: reading failed");
-    } else if (result != 0)
+    } else if (completion_status != 0)
     {
-        clean_exit_failure(fstring("Reading packet: reading failed with unknown error: %d", result));
+        clean_exit_failure(fstring("Reading packet: reading failed with unknown error: %d", completion_status));
     }
-
 
     if (g_packet == NULL) {
         pcap_close(handle);
@@ -137,21 +135,15 @@ const uint8_t *read_first_packet(pcap_t *handle, char *filter, bpf_u_int32 expec
         clean_exit_failure("Packet header was NULL after successful reading");
     }
     
-    if (g_pkthdr->caplen < expected_min_packet_len) {
-        pcap_close(handle);
-        clean_exit_failure(fstring("Reading packet: error when getting next packet. Received packet length is less than expected: %d, but got: %d", expected_min_packet_len, g_pkthdr->caplen));
-    }
-    
     if (DEBUG) {
-        printf("Reading packet: successfully read packet with length %d, expected length %d\n", g_pkthdr->caplen, expected_min_packet_len);
+        printf("Reading packet: successfully read packet with length %d\n", g_pkthdr->caplen);
     }
     
-    const uint8_t *packet = g_packet;
+    result->packet = (uint8_t *)g_packet;
+    result->packet_len = g_pkthdr->caplen;
     g_packet = NULL;
     g_pkthdr = NULL;
     g_handle = NULL;
-
-    return packet;
 }
 
 

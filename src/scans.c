@@ -10,58 +10,60 @@
 #include <string.h>
 
 #define MAX_NO_RESPONSE_RETRIES 2
+#define TCP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header))
+#define TRANSPORT_HEADER_OFFSET (sizeof(struct ether_header) + sizeof(struct s_ip_header))
+#define ICMP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN)
+#define UDP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_udp_header))
 
 //The scan can detect open, closed and filtered ports.
 //If RST is received back - port is closed, ICPM (destination unreachable) - port is filtered, no response - port is open or filtered.
-enum port_state scan_syn(const struct NetConfig *config, uint16_t port)
+enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
 {
     char *scan_type = "SYN";
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
     
     pcap_t *handle = create_capture_handle(config->device_name);
     
-    uint8_t outgoing_packet[sizeof(struct ether_header) + sizeof(struct ip_header) + sizeof(struct tcp_header)];
+    uint8_t outgoing_packet[TCP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
     write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct tcp_header), outgoing_packet + sizeof(struct ether_header));
-    struct ip_header *outgoing_ip_header = (struct ip_header *) (outgoing_packet + sizeof(struct ether_header));
-    struct tcp_parameters tcp_parameters;
+    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
+    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
+    struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
     tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_SYN;
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct ip_header);
-    
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + tcp_packet_offset);
+    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
     
     char *filter = fstring("(tcp && tcp src port %d && src host %s) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), ICMP_TYPE_DESTINATION_UNREACHABLE);
     
     enum port_state scan_result = UNKNOWN;
 
     int no_response_retries = 0;
-    const uint8_t *received_packet = NULL;
-    int ICMP_FULL_FRAME_LEN = sizeof(struct ether_header) + sizeof(struct ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN;
-    while (received_packet == NULL && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
     {
         
         if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
         
         send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        received_packet = read_first_packet(handle, filter, ICMP_FULL_FRAME_LEN, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
         no_response_retries++;
     }
     
-    if (received_packet != NULL)
+    if (received_packet_result.packet_len != -1)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
         
-        struct ip_header *ip_header = (struct ip_header *) (received_packet + sizeof(struct ether_header));
+        struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_TCP) 
         {
-            struct tcp_header * tcp_header = (struct tcp_header *) (received_packet + sizeof(struct ether_header) + sizeof (struct ip_header));
+            struct s_tcp_header * tcp_header = (struct s_tcp_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof (struct s_ip_header));
             if (is_tcp_syn_set(tcp_header) && is_tcp_ack_set(tcp_header)) 
             {
                 if (DEBUG) printf(GREEN"%s SCAN: received TCP SYN ACK packet, sending RST packet\n"COLOR_RESET, scan_type);
@@ -72,7 +74,7 @@ enum port_state scan_syn(const struct NetConfig *config, uint16_t port)
                 tcp_parameters.window_size = 0;
                 tcp_parameters.sequence_number = 1;
                 tcp_parameters.ack_number = 1;
-                write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + tcp_packet_offset);
+                write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
                 send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
                 
                 if (DEBUG) printf(GREEN"%s SCAN: PORT IS OPEN\n"COLOR_RESET, scan_type);
@@ -92,7 +94,7 @@ enum port_state scan_syn(const struct NetConfig *config, uint16_t port)
         } 
         else if (ip_header->protocol_number == IPPROTO_ICMP) 
         {   
-            struct icmp_header *icmp_header = (struct icmp_header *) (received_packet + sizeof(struct ether_header) + sizeof(struct ip_header));
+            struct s_icmp_header *icmp_header = (struct s_icmp_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
             if (icmp_header->type == ICMP_TYPE_DESTINATION_UNREACHABLE) {
                 if (DEBUG) printf(GREEN"%s SCAN: received ICMP PORT UNREACHABLE packet\n"COLOR_RESET, scan_type);
                 if (DEBUG) printf(GREEN"%s SCAN: PORT IS FILTERED\n"COLOR_RESET, scan_type);
@@ -150,21 +152,21 @@ const char *scan_type_to_string(enum scan_type type)
 // This scan is useful in the situation, when closed port is protected by a firewall. So SYN scan receives no reply and we don't know if the port opened or closed. We can only say it is filtered.
 //Some times the firewalls only drop the incoming SYN packets. So this scan can surpass anti-SYN firewall protection and detect closed ports. Althogh such firewalls are rare and the OS is not necessarily configured
 //to anser with RST on closed ports to packets that don't have SYN, ACK or RST. So this scan is just additional tool that may help to detect closed port protected by specific firewall.
-enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, uint16_t port)
+enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port)
 {
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type_to_string(scan_type), inet_ntoa(config->target_ip), port);
     
     pcap_t *handle = create_capture_handle(config->device_name);
     
-    uint8_t outgoing_packet[sizeof(struct ether_header) + sizeof(struct ip_header) + sizeof(struct tcp_header)];
+    uint8_t outgoing_packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
     write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
     
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct tcp_header), outgoing_packet + sizeof(struct ether_header));
+    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
     
-    struct ip_header *outgoing_ip_header = (struct ip_header *) (outgoing_packet + sizeof(struct ether_header));
-    struct tcp_parameters tcp_parameters;
+    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
+    struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
     
@@ -183,35 +185,33 @@ enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, u
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct ip_header);
-    
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + tcp_packet_offset);
+    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
     
     char *filter = fstring("(tcp && tcp src port %d && src host %s && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE);
     
     enum port_state scan_result = UNKNOWN;
 
     int no_response_retries = 0;
-    const uint8_t *received_packet = NULL;
-    int ICMP_FULL_FRAME_LEN = sizeof(struct ether_header) + sizeof(struct ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN;
-    while (received_packet == NULL && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
     {
         
         if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type_to_string(scan_type), no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
         
         send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        received_packet = read_first_packet(handle, filter, ICMP_FULL_FRAME_LEN, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
         no_response_retries++;
     }
     
-    if (received_packet != NULL)
+    if (received_packet_result.packet_len != -1)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type_to_string(scan_type));
         
-        struct ip_header *ip_header = (struct ip_header *) (received_packet + sizeof(struct ether_header));
+        struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_TCP)
         {
-            struct tcp_header * tcp_header = (struct tcp_header *) (received_packet + sizeof(struct ether_header) + sizeof (struct ip_header));
+            struct s_tcp_header * tcp_header = (struct s_tcp_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof (struct s_ip_header));
             if (is_tcp_rst_set(tcp_header))
             {
                 if (DEBUG) printf(GREEN"SYN SCAN: received TCP RST packet\n"COLOR_RESET);
@@ -247,56 +247,59 @@ enum port_state scan(enum scan_type scan_type, const struct NetConfig *config, u
 //When scanning unfiltered systems, open and closed ports will both return a RST packet. 
 //Nmap then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined. 
 //Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
-enum port_state scan_ack(const struct NetConfig *config, uint16_t port)
+enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
 {
     char *scan_type = "ACK";
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
     
     pcap_t *handle = create_capture_handle(config->device_name);
     
-    uint8_t outgoing_packet[sizeof(struct ether_header) + sizeof(struct ip_header) + sizeof(struct tcp_header)];
+    uint8_t outgoing_packet[TCP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
     write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
     
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct tcp_header), outgoing_packet + sizeof(struct ether_header));
+    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
     
-    struct ip_header *outgoing_ip_header = (struct ip_header *) (outgoing_packet + sizeof(struct ether_header));
-    struct tcp_parameters tcp_parameters;
+    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
+    struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
     tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_ACK;
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct ip_header);
+    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
     
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + tcp_packet_offset);
-    
+
+    //possible responses for ack scan:
+    //- TCP RST response - unfiltered
+    //- No response received (even after retransmissions) - filtered
+    //- ICMP unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)	 - filtered
     char *filter = fstring("(tcp && tcp src port %d && src host %s && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE);
     
     enum port_state scan_result = UNKNOWN;
 
     int no_response_retries = 0;
-    const uint8_t *received_packet = NULL;
-    int ICMP_FULL_FRAME_LEN = sizeof(struct ether_header) + sizeof(struct ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN;
-    while (received_packet == NULL && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
     {
         if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
         
         send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        received_packet = read_first_packet(handle, filter, ICMP_FULL_FRAME_LEN, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
         no_response_retries++;
     }
     
-    if (received_packet != NULL)
+    if (received_packet_result.packet_len != -1)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
         
-        struct ip_header *ip_header = (struct ip_header *) (received_packet + sizeof(struct ether_header));
+        struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_TCP)
         {
-            struct tcp_header * tcp_header = (struct tcp_header *) (received_packet + sizeof(struct ether_header) + sizeof (struct ip_header));
+            struct s_tcp_header * tcp_header = (struct s_tcp_header *) (received_packet_result.packet + TRANSPORT_HEADER_OFFSET);
             if (is_tcp_rst_set(tcp_header))
             {
                 if (DEBUG) printf(GREEN"%s SCAN: received TCP RST packet\n"COLOR_RESET, scan_type);
@@ -321,6 +324,75 @@ enum port_state scan_ack(const struct NetConfig *config, uint16_t port)
         if (DEBUG) printf(GREEN"%s SCAN: no response received\n"COLOR_RESET, scan_type);
         if (DEBUG) printf(GREEN"%s SCAN: PORT IS OPEN | FILTERED\n"COLOR_RESET, scan_type);
         scan_result = FILTERED;
+    }
+    pcap_close(handle);
+    if (scan_result == UNKNOWN)
+    {
+        clean_exit_failure("Failed to detect port state");
+    }
+    return scan_result;
+}
+
+enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
+{
+    char *scan_type = "UDP";
+    if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
+    
+    pcap_t *handle = create_capture_handle(config->device_name);
+    
+    uint8_t outgoing_packet[UDP_FULL_HEADER_LEN];
+    memset(outgoing_packet, 0, sizeof(outgoing_packet));
+
+    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
+    
+    write_ip_header_local_to_remote(config, IPPROTO_UDP, sizeof(struct s_udp_header), outgoing_packet + sizeof(struct ether_header));
+    
+    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
+    write_udp_header(outgoing_ip_header, outgoing_packet + TRANSPORT_HEADER_OFFSET, port);
+    
+    //possible responses for udp scan:
+    //- Any UDP response from target port (unusual) - open
+    //- No response received (even after retransmissions) - open|filtered
+    //- ICMP port unreachable error (type 3, code 3) - closed
+    //- Other ICMP unreachable errors (type 3, code 1, 2, 9, 10, or 13) - filtered
+
+    char *filter = fstring("(udp && udp src port %d && src host %s) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), ICMP_TYPE_DESTINATION_UNREACHABLE);
+    
+    enum port_state scan_result = UNKNOWN;
+
+    int no_response_retries = 0;
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
+    {
+        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
+        
+        send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
+        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+        no_response_retries++;
+    }
+    
+    if (received_packet_result.packet_len != -1)
+    {
+        if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
+
+        struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
+        if (ip_header->protocol_number == IPPROTO_UDP)
+        {
+            if (DEBUG) printf(GREEN"%s SCAN: received UDP reponse packet\n"COLOR_RESET, scan_type);
+            if (DEBUG) printf(GREEN"%s SCAN: PORT IS OPEN\n"COLOR_RESET, scan_type);
+            scan_result = OPEN;
+        } 
+        else if (ip_header->protocol_number == IPPROTO_ICMP) 
+        {   
+            //handle ICMP unreachable error
+        }
+    }
+    else 
+    {
+        if (DEBUG) printf(GREEN"%s SCAN: no response received\n"COLOR_RESET, scan_type);
+        if (DEBUG) printf(GREEN"%s SCAN: PORT IS OPEN | FILTERED\n"COLOR_RESET, scan_type);
+        scan_result = OPEN_FILTERED;
     }
     pcap_close(handle);
     if (scan_result == UNKNOWN)
