@@ -16,7 +16,7 @@
 #define ICMP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN)
 #define UDP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_udp_header))
 
-#define UDP_DESTINATION_PORT_OFFSET_IN_IP_PACKET 34 //8 - до ip хедера, 20 - до  udp хедера, 2 до destomatopm port, 
+#define UDP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_IP_PACKET 30
 
 //The scan can detect open, closed and filtered ports.
 //If RST is received back - port is closed, ICPM (destination unreachable) - port is filtered, no response - port is open or filtered.
@@ -358,8 +358,9 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     //- No response received (even after retransmissions) - open|filtered
     //- ICMP port unreachable error (type 3, code 3) - closed
     //- Other ICMP unreachable errors (type 3, code 1, 2, 9, 10, or 13) - filtered
-    // 8 - до ip хедера, 20 - до  udp хедера, 2 до destomatopm port, 
-    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[3:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, htons(port), inet_ntoa(config->target_ip));
+    
+    //DO NOT COVERT LOCAL BYTE ORDER TO NETWORK BYTE ORDER IN FILTER STRING
+    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_IP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -393,8 +394,9 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
             scan_result = OPEN;
         } 
         else if (ip_header->protocol_number == IPPROTO_ICMP) 
-        {   
+        {
             struct s_icmp_destination_unreachable_header *icmp_header = (struct s_icmp_destination_unreachable_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
+        
             if (icmp_header->code == 3)
             {
                 if (DEBUG) printf(GREEN"%s SCAN: received ICMP PORT UNREACHABLE packet with code 3\n"COLOR_RESET, scan_type);

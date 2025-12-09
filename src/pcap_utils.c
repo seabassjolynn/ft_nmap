@@ -114,6 +114,7 @@ void read_first_packet(pcap_t *handle, char *filter, struct s_read_packet_result
         g_packet = NULL;
         g_pkthdr = NULL; //this structure has caplen. The packet may be truncated, so this caplen - is actual length of the packet. Packet is truncated, due to setups of the handle - there the max lengh of packet may be specified.
         g_handle = NULL;
+        return;
     } else if (completion_status == PCAP_ERROR_NOT_ACTIVATED)
     {
         clean_exit_failure("Reading packet: attemt to read from handle that was not activated");

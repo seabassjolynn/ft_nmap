@@ -76,11 +76,19 @@ void request_gateway_mac(struct s_net_config *config) {
 
     send_packet(handle, arp_request, sizeof(arp_request));
     
-    const uint8_t *packet = read_first_packet(handle, filter, sizeof(struct ether_header) + sizeof(struct ether_arp), 1);
-    if (packet == NULL) {
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    read_first_packet(handle, filter, &received_packet_result, 1);
+    if (received_packet_result.packet_len == -1) {
+        pcap_close(handle);
         clean_exit_failure("Failed to get gateway mac");
     }
-    struct ether_arp *arp_response = (struct ether_arp *) (packet + sizeof(struct ether_header));
+    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct ether_arp))) {
+        pcap_close(handle);
+        clean_exit_failure("Received packet shorter then ethernet header + arp header");
+    }
+
+    struct ether_arp *arp_response = (struct ether_arp *) (received_packet_result.packet + sizeof(struct ether_header));
     memcpy(config->gateway_mac, arp_response->arp_sha, ETH_ALEN);
     
     if (DEBUG) {

@@ -5,6 +5,7 @@
 #include "utils.h"
 #include <string.h>
 #include "color_output.h"
+#include "resources.h"
 
 static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
 {   
@@ -23,9 +24,19 @@ static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
     
     char *filter = fstring("icmp and icmp[icmptype] == %d and icmp[4:2] == %d", ICMP_TYPE_ECHO_REPLY, icmp_identifier);
 
-    const uint8_t *received_packet = read_first_packet(handle, filter, expected_packet_len, 1);
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    read_first_packet(handle, filter, &received_packet_result, 1);
+    if (received_packet_result.packet_len == -1) {
+        pcap_close(handle);
+        clean_exit_failure("Failed to ping echo remote");
+    }
+    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + sizeof(icmp_data))) {
+        pcap_close(handle);
+        clean_exit_failure("Received packet shorter then ethernet header + ip header + icmp header + icmp data");
+    }
 
-    return received_packet != NULL;
+    return received_packet_result.packet_len != -1;
 }
 
 static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *handle) {
@@ -49,13 +60,24 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
     
     char *filter = fstring("icmp and icmp[icmptype] == %d and icmp[4:2] == %d", ICMP_TYPE_TIMESTAMP_RESPONSE, icmp_identifier);
     
-    const uint8_t *received_packet = read_first_packet(handle, filter, packet_len, 1);
-    return received_packet != NULL;
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    read_first_packet(handle, filter, &received_packet_result, 1);
+    if (received_packet_result.packet_len == -1) {
+        pcap_close(handle);
+        clean_exit_failure("Failed to ping timestamp remote");
+    }
+    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + icmp_payload_len)) {
+        pcap_close(handle);
+        clean_exit_failure("Received packet shorter then ethernet header + ip header + icmp header + icmp data");
+    }
+    
+    return received_packet_result.packet_len != -1;
 }
 
 static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pcap_t *handle)
 {
-    uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct tcp_header)];
+    uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(&packet, 0, sizeof(packet));
     
     write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
@@ -80,8 +102,11 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     options_syn_ack = options_syn_ack | 1 << 1; //syn flag
     options_syn_ack = options_syn_ack | 1 << 4; //ack flag
     char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_syn_ack);
-    const uint8_t *received_packet = read_first_packet(handle, filter, sizeof(packet), 1);
-    if (received_packet != NULL) {
+    
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    read_first_packet(handle, filter, &received_packet_result, 1);
+    if (received_packet_result.packet != NULL) {
         init_tcp_parameters(&tcp_parameters);
         tcp_parameters.destination_port = 80;
         tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST | TCP_FLAG_ACK;
@@ -92,12 +117,12 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
         send_packet(handle, packet, sizeof(packet));
     }
 
-    return received_packet != NULL;
+    return received_packet_result.packet != NULL;
 }
 
 static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pcap_t *handle)
 {
-    uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct tcp_header)];
+    uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(&packet, 0, sizeof(packet));
     
     write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
@@ -122,8 +147,11 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
     options_rst = options_rst | TCP_FLAG_RST;
     options_rst = options_rst | TCP_FLAG_ACK;
     char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_rst);
-    const uint8_t *received_packet = read_first_packet(handle, filter, sizeof(packet), 1);
-    return received_packet != NULL;
+    
+    struct s_read_packet_result received_packet_result;
+    received_packet_result.packet_len = -1;
+    read_first_packet(handle, filter, &received_packet_result, 1);
+    return received_packet_result.packet != NULL;
 }
 
 bool is_host_up(const struct s_net_config *config) {

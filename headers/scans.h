@@ -26,4 +26,6 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
 
 enum port_state scan_ack(const struct s_net_config *config, uint16_t port);
 
+enum port_state scan_udp(const struct s_net_config *config, uint16_t port);
+
 #endif

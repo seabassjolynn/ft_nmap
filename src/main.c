@@ -17,8 +17,9 @@ int main() {
     request_gateway_mac(&net_config);
     //is_host_up(&net_config);
     
-    scan_syn(&net_config, 80);
+    //scan_syn(&net_config, 80);
     //scan(SCAN_FIN, &net_config, 81);
     //scan_ack(&net_config, 80);
+    scan_udp(&net_config, 80);
     return 0;
 }
