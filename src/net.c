@@ -279,6 +279,13 @@ void write_tcp_header(struct  s_ip_header *ip_header, struct s_tcp_parameters *p
     memcpy(packet, &tcp_header, sizeof(struct s_tcp_header));
 }
 
+void write_full_tcp_header(const struct s_net_config *config, struct s_tcp_parameters tcp_parameters, uint8_t *packet)
+{
+    write_ether_ip_header(config, IPPROTO_TCP, sizeof(struct s_tcp_header), packet);
+    struct s_ip_header *ip_header = (struct s_ip_header *) (packet + sizeof(struct ether_header));
+    write_tcp_header(ip_header, &tcp_parameters, packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
+}
+
 void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port)
 {
     struct s_udp_header *udp_header = (struct s_udp_header *)packet;

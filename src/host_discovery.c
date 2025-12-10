@@ -60,12 +60,6 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(&packet, 0, sizeof(packet));
     
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
-    
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), packet + sizeof(struct ether_header));
-    
-    struct s_ip_header *ip_header = (struct s_ip_header *) (packet + sizeof(struct ether_header));
-    
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = 80;
@@ -73,9 +67,7 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     tcp_parameters.window_size = 1024;
     tcp_parameters.sequence_number = 0;
 
-    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct s_ip_header);
-    
-    write_tcp_header(ip_header, &tcp_parameters, packet + tcp_packet_offset);
+    write_full_tcp_header(config, tcp_parameters, packet);
     
     send_packet(handle, packet, sizeof(packet));
     int options_syn_ack = 0;
@@ -89,11 +81,12 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     if (received_packet_result.packet != NULL) {
         init_tcp_parameters(&tcp_parameters);
         tcp_parameters.destination_port = 80;
-        tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST | TCP_FLAG_ACK;
+        tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST; // | TCP_FLAG_ACK;
         tcp_parameters.window_size = 0;
         tcp_parameters.sequence_number = 1;
-        tcp_parameters.ack_number = 1;
-        write_tcp_header(ip_header, &tcp_parameters, packet + tcp_packet_offset);
+        tcp_parameters.ack_number = 0;
+        memset(packet, 0, sizeof(packet));
+        write_full_tcp_header(config, tcp_parameters, packet);
         send_packet(handle, packet, sizeof(packet));
     }
 
@@ -105,12 +98,6 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
     uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(&packet, 0, sizeof(packet));
     
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
-    
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), packet + sizeof(struct ether_header));
-    
-    struct s_ip_header *ip_header = (struct s_ip_header *) (packet + sizeof(struct ether_header));
-    
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = 443;
@@ -118,9 +105,7 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
     tcp_parameters.window_size = 1024;
     tcp_parameters.sequence_number = 0;
 
-    int tcp_packet_offset = sizeof(struct ether_header) + sizeof(struct s_ip_header);
-    
-    write_tcp_header(ip_header, &tcp_parameters, packet + tcp_packet_offset);
+    write_full_tcp_header(config, tcp_parameters, packet);
     
     send_packet(handle, packet, sizeof(packet));
     int options_rst = 0;

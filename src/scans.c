@@ -30,9 +30,6 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     uint8_t outgoing_packet[TCP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
-    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
@@ -40,8 +37,9 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
+    write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
+    //TODO: filter ICMP packets based on icmp reply data (there could be many icmp replies commit back, we need to differenciate them)
     char *filter = fstring("(tcp && tcp src port %d && src host %s) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), ICMP_TYPE_DESTINATION_UNREACHABLE);
     
     enum port_state scan_result = UNKNOWN;
@@ -59,7 +57,7 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
         no_response_retries++;
     }
     
-    if (received_packet_result.packet_len != -1)
+    if (received_packet_result.packet != NULL)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
         
@@ -77,7 +75,11 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
                 tcp_parameters.window_size = 0;
                 tcp_parameters.sequence_number = 1;
                 tcp_parameters.ack_number = 1;
-                write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
+                
+                memset(outgoing_packet, 0, sizeof(outgoing_packet));
+                
+                write_full_tcp_header(config, tcp_parameters, outgoing_packet);
+
                 send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
                 
                 if (DEBUG) printf(GREEN"%s SCAN: PORT IS OPEN\n"COLOR_RESET, scan_type);
@@ -89,30 +91,12 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
                 if (DEBUG) printf(GREEN"%s SCAN: PORT IS CLOSED\n"COLOR_RESET, scan_type);
                 scan_result = CLOSED;
             }
-            else 
-            {
-                pcap_close(handle);
-                clean_exit_failure(fstring("Expected TCP SYN ACK or RST packet, received:\n %s", tcp_display_string(tcp_header)));
-            }
         } 
         else if (ip_header->protocol_number == IPPROTO_ICMP) 
         {   
-            struct s_icmp_header *icmp_header = (struct s_icmp_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
-            if (icmp_header->type == ICMP_TYPE_DESTINATION_UNREACHABLE) {
-                if (DEBUG) printf(GREEN"%s SCAN: received ICMP PORT UNREACHABLE packet\n"COLOR_RESET, scan_type);
-                if (DEBUG) printf(GREEN"%s SCAN: PORT IS FILTERED\n"COLOR_RESET, scan_type);
-                scan_result = FILTERED;
-            } 
-            else 
-            {
-                pcap_close(handle);
-                clean_exit_failure(fstring("Expected ICMP PORT UNREACHABLE type, but received ICMP type: %d", icmp_header->type));
-            }
-        }
-        else 
-        {
-            pcap_close(handle);
-            clean_exit_failure(fstring("Received packet with unknown ip protocol: %d", ip_header->protocol_number));
+            if (DEBUG) printf(GREEN"%s SCAN: received ICMP PORT UNREACHABLE packet\n"COLOR_RESET, scan_type);
+            if (DEBUG) printf(GREEN"%s SCAN: PORT IS FILTERED\n"COLOR_RESET, scan_type);
+            scan_result = FILTERED;
         }
     }
     else 
