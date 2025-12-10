@@ -1,5 +1,6 @@
 #include "net.h"
 #include "host_discovery.h"
+#include <stdint.h>
 #include <unistd.h>
 #include "pcap_utils.h"
 #include "utils.h"
@@ -14,9 +15,7 @@ static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
     int expected_packet_len = sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + sizeof(icmp_data);
     uint8_t packet[expected_packet_len];
 
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
-
-    write_ip_header_local_to_remote(config, IPPROTO_ICMP, sizeof(struct s_icmp_header) + sizeof(icmp_data), packet + sizeof(struct ether_header));
+    write_ether_ip_header(config, IPPROTO_ICMP, sizeof(struct s_icmp_header) + sizeof(icmp_data), packet);
 
     write_icmp_echo_request(icmp_identifier, (uint8_t*)icmp_data, sizeof(icmp_data), packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
 
@@ -27,19 +26,11 @@ static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
     struct s_read_packet_result received_packet_result;
     received_packet_result.packet_len = -1;
     read_first_packet(handle, filter, &received_packet_result, 1);
-    if (received_packet_result.packet_len == -1) {
-        pcap_close(handle);
-        clean_exit_failure("Failed to ping echo remote");
-    }
-    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + sizeof(icmp_data))) {
-        pcap_close(handle);
-        clean_exit_failure("Received packet shorter then ethernet header + ip header + icmp header + icmp data");
-    }
-
     return received_packet_result.packet_len != -1;
 }
 
-static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *handle) {
+static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *handle) 
+{
     int icmp_payload_len = 12;
     char icmp_data[12];
     memset(icmp_data, 0, sizeof(icmp_data));
@@ -48,10 +39,8 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
     uint8_t packet[packet_len];
 
     memset(packet, 0, packet_len);
-
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
-
-    write_ip_header_local_to_remote(config, IPPROTO_ICMP, sizeof(struct s_icmp_header) + icmp_payload_len, packet + sizeof(struct ether_header));
+    
+    write_ether_ip_header(config, IPPROTO_ICMP, sizeof(struct s_icmp_header) + icmp_payload_len, packet);
 
     uint16_t icmp_identifier = getpid();
     write_icmp_timestamp_request(icmp_identifier, (uint8_t*)icmp_data, icmp_payload_len, packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
@@ -63,16 +52,7 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
     struct s_read_packet_result received_packet_result;
     received_packet_result.packet_len = -1;
     read_first_packet(handle, filter, &received_packet_result, 1);
-    if (received_packet_result.packet_len == -1) {
-        pcap_close(handle);
-        clean_exit_failure("Failed to ping timestamp remote");
-    }
-    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + icmp_payload_len)) {
-        pcap_close(handle);
-        clean_exit_failure("Received packet shorter then ethernet header + ip header + icmp header + icmp data");
-    }
-    
-    return received_packet_result.packet_len != -1;
+    return received_packet_result.packet != NULL;
 }
 
 static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pcap_t *handle)
@@ -99,8 +79,8 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     
     send_packet(handle, packet, sizeof(packet));
     int options_syn_ack = 0;
-    options_syn_ack = options_syn_ack | 1 << 1; //syn flag
-    options_syn_ack = options_syn_ack | 1 << 4; //ack flag
+    options_syn_ack = options_syn_ack | TCP_FLAG_SYN;
+    options_syn_ack = options_syn_ack | TCP_FLAG_ACK;
     char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_syn_ack);
     
     struct s_read_packet_result received_packet_result;

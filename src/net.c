@@ -192,6 +192,11 @@ void write_ip_header_local_to_remote(const struct s_net_config *config, uint8_t 
     ip_header->checksum = checksum;
 };
 
+void write_ether_ip_header(const struct s_net_config *config, uint8_t transport_protocol, uint16_t payload_len, uint8_t *packet) {
+    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, packet);
+    write_ip_header_local_to_remote(config, transport_protocol, payload_len, packet + sizeof(struct ether_header));
+}
+
 void write_icmp_echo_request(uint16_t identifier, uint8_t *data, unsigned long data_len, uint8_t *buffer)
 {
     struct s_icmp_header *icmp_header = (struct s_icmp_header *)buffer;

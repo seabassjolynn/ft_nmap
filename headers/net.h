@@ -156,6 +156,8 @@ char *tcp_display_string(struct s_tcp_header *tcp_header);
 
 void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port);
 
+void write_ether_ip_header(const struct s_net_config *config, uint8_t transport_protocol, uint16_t payload_len, uint8_t *packet);
+
 #define PACKET_READING_TIMEOUT_SEC_DEFAULT 1
 
 #endif

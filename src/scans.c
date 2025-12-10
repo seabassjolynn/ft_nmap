@@ -379,12 +379,6 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     if (received_packet_result.packet_len != -1)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
-
-        if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct s_ip_header)))
-        {
-            pcap_close(handle);
-            clean_exit_failure("Received packet shorter then ethernet header + ip header");
-        }
         
         struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_UDP)
