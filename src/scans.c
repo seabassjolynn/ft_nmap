@@ -16,7 +16,20 @@
 #define ICMP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN)
 #define UDP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_udp_header))
 
-#define UDP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_IP_PACKET 30
+#define UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET 30
+
+static void send_and_receive_packet_with_retries(char *scan_type, pcap_t *handle, uint8_t *outgoing_packet, int outgoing_packet_size, char *filter, struct s_read_packet_result *received_packet, unsigned int timeout_sec)
+{
+    int no_response_retries = 0;
+    while (received_packet->packet == NULL && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
+    {
+        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
+        
+        send_packet(handle, outgoing_packet, outgoing_packet_size);
+        read_first_packet(handle, filter, received_packet, timeout_sec);
+        no_response_retries++;
+    }
+}
 
 //The scan can detect open, closed and filtered ports.
 //If RST is received back - port is closed, ICPM (destination unreachable) - port is filtered, no response - port is open or filtered.
@@ -39,23 +52,15 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     
     write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-    //TODO: filter ICMP packets based on icmp reply data (there could be many icmp replies commit back, we need to differenciate them)
-    char *filter = fstring("(tcp && tcp src port %d && src host %s) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), ICMP_TYPE_DESTINATION_UNREACHABLE);
+    char *filter = fstring("((tcp && tcp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) && src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
-    int no_response_retries = 0;
     struct s_read_packet_result received_packet_result;
     received_packet_result.packet_len = -1;
-    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
-    {
-        
-        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
-        
-        send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
-        no_response_retries++;
-    }
+    received_packet_result.packet = NULL;
+
+    send_and_receive_packet_with_retries(scan_type, handle, outgoing_packet, sizeof(outgoing_packet), filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
     
     if (received_packet_result.packet != NULL)
     {
@@ -71,10 +76,9 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
                 
                 init_tcp_parameters(&tcp_parameters);
                 tcp_parameters.destination_port = port;
-                tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST | TCP_FLAG_ACK;
+                tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST;
                 tcp_parameters.window_size = 0;
                 tcp_parameters.sequence_number = 1;
-                tcp_parameters.ack_number = 1;
                 
                 memset(outgoing_packet, 0, sizeof(outgoing_packet));
                 
@@ -344,7 +348,7 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     //- Other ICMP unreachable errors (type 3, code 1, 2, 9, 10, or 13) - filtered
     
     //DO NOT COVERT LOCAL BYTE ORDER TO NETWORK BYTE ORDER IN FILTER STRING
-    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_IP_PACKET, port, inet_ntoa(config->target_ip));
+    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
