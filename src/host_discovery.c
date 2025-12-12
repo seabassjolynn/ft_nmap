@@ -24,9 +24,9 @@ static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
     char *filter = fstring("icmp and icmp[icmptype] == %d and icmp[4:2] == %d", ICMP_TYPE_ECHO_REPLY, icmp_identifier);
 
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
+    init_read_packet_result(&received_packet_result);
     read_first_packet(handle, filter, &received_packet_result, 1);
-    return received_packet_result.packet_len != -1;
+    return received_packet_result.packet != NULL;
 }
 
 static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *handle) 
@@ -50,7 +50,7 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
     char *filter = fstring("icmp and icmp[icmptype] == %d and icmp[4:2] == %d", ICMP_TYPE_TIMESTAMP_RESPONSE, icmp_identifier);
     
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
+    init_read_packet_result(&received_packet_result);
     read_first_packet(handle, filter, &received_packet_result, 1);
     return received_packet_result.packet != NULL;
 }
@@ -76,7 +76,7 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_syn_ack);
     
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
+    init_read_packet_result(&received_packet_result);
     read_first_packet(handle, filter, &received_packet_result, 1);
     if (received_packet_result.packet != NULL) {
         init_tcp_parameters(&tcp_parameters);
@@ -114,7 +114,7 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
     char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_rst);
     
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
+    init_read_packet_result(&received_packet_result);
     read_first_packet(handle, filter, &received_packet_result, 1);
     return received_packet_result.packet != NULL;
 }

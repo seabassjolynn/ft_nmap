@@ -77,15 +77,11 @@ void request_gateway_mac(struct s_net_config *config) {
     send_packet(handle, arp_request, sizeof(arp_request));
     
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
+    init_read_packet_result(&received_packet_result);
     read_first_packet(handle, filter, &received_packet_result, 1);
-    if (received_packet_result.packet_len == -1) {
+    if (received_packet_result.packet == NULL) {
         pcap_close(handle);
         clean_exit_failure("Failed to get gateway mac");
-    }
-    if (received_packet_result.packet_len < (int)(sizeof(struct ether_header) + sizeof(struct ether_arp))) {
-        pcap_close(handle);
-        clean_exit_failure("Received packet shorter then ethernet header + arp header");
     }
 
     struct ether_arp *arp_response = (struct ether_arp *) (received_packet_result.packet + sizeof(struct ether_header));

@@ -76,7 +76,7 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *byt
     g_pkthdr = h;
 }
 
-void set_packet_filter(pcap_t *handle, char *filter) {
+void set_packet_filter(pcap_t *handle, const char *filter) {
     if (DEBUG) {
         printf("Setting filter for packet reading: %s\n", filter);
     }
@@ -100,7 +100,7 @@ void set_packet_filter(pcap_t *handle, char *filter) {
     pcap_freecode(&program);
 }
 
-void read_first_packet(pcap_t *handle, char *filter, struct s_read_packet_result *result, unsigned int timeout_sec)
+void read_first_packet(pcap_t *handle, const char *filter, struct s_read_packet_result *result, unsigned int timeout_sec)
 {
     set_packet_filter(handle, filter);
     
@@ -147,6 +147,10 @@ void read_first_packet(pcap_t *handle, char *filter, struct s_read_packet_result
     g_handle = NULL;
 }
 
+void init_read_packet_result(struct s_read_packet_result *result) {
+    result->packet = NULL;
+    result->packet_len = -1;
+}
 
 
 

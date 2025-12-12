@@ -18,7 +18,7 @@
 
 #define UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET 30
 
-static void send_and_receive_packet_with_retries(char *scan_type, pcap_t *handle, uint8_t *outgoing_packet, int outgoing_packet_size, char *filter, struct s_read_packet_result *received_packet, unsigned int timeout_sec)
+static void send_and_receive_packet_with_retries(const char *scan_type, pcap_t *handle, uint8_t *outgoing_packet, int outgoing_packet_size, const char *filter, struct s_read_packet_result *received_packet, unsigned int timeout_sec)
 {
     int no_response_retries = 0;
     while (received_packet->packet == NULL && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
@@ -57,8 +57,7 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     enum port_state scan_result = UNKNOWN;
 
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
-    received_packet_result.packet = NULL;
+    init_read_packet_result(&received_packet_result);
 
     send_and_receive_packet_with_retries(scan_type, handle, outgoing_packet, sizeof(outgoing_packet), filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
     
@@ -149,18 +148,12 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
     
     pcap_t *handle = create_capture_handle(config->device_name);
     
-    uint8_t outgoing_packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
+    uint8_t outgoing_packet[TCP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
-    
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
-    
-    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
-    
     if (scan_type == SCAN_FIN) 
     {
         tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_FIN;
@@ -176,26 +169,17 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
+    write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
     char *filter = fstring("(tcp && tcp src port %d && src host %s && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE);
     
     enum port_state scan_result = UNKNOWN;
 
-    int no_response_retries = 0;
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
-    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES) 
-    {
-        
-        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type_to_string(scan_type), no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
-        
-        send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
-        no_response_retries++;
-    }
+    init_read_packet_result(&received_packet_result);
     
-    if (received_packet_result.packet_len != -1)
+    send_and_receive_packet_with_retries(scan_type_to_string(scan_type), handle, outgoing_packet, sizeof(outgoing_packet), filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+    if (received_packet_result.packet != NULL)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type_to_string(scan_type));
         
@@ -271,19 +255,12 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
     
     enum port_state scan_result = UNKNOWN;
 
-    int no_response_retries = 0;
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
-    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
-    {
-        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
-        
-        send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
-        no_response_retries++;
-    }
+    init_read_packet_result(&received_packet_result);
     
-    if (received_packet_result.packet_len != -1)
+    send_and_receive_packet_with_retries(scan_type, handle, outgoing_packet, sizeof(outgoing_packet), filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+    
+    if (received_packet_result.packet != NULL)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
         
@@ -352,19 +329,12 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     
     enum port_state scan_result = UNKNOWN;
 
-    int no_response_retries = 0;
     struct s_read_packet_result received_packet_result;
-    received_packet_result.packet_len = -1;
-    while (received_packet_result.packet_len == -1 && no_response_retries <= MAX_NO_RESPONSE_RETRIES)
-    {
-        if (DEBUG) printf(GREEN"%s SCAN: sending packet, attempt %d out of %d\n"COLOR_RESET, scan_type, no_response_retries + 1, MAX_NO_RESPONSE_RETRIES + 1);
-        
-        send_packet(handle, outgoing_packet, sizeof(outgoing_packet));
-        read_first_packet(handle, filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
-        no_response_retries++;
-    }
+    init_read_packet_result(&received_packet_result);
     
-    if (received_packet_result.packet_len != -1)
+    send_and_receive_packet_with_retries(scan_type, handle, outgoing_packet, sizeof(outgoing_packet), filter, &received_packet_result, PACKET_READING_TIMEOUT_SEC_DEFAULT);
+    
+    if (received_packet_result.packet != NULL)
     {
         if (DEBUG) printf(GREEN"%s SCAN: received packet\n"COLOR_RESET, scan_type);
         
