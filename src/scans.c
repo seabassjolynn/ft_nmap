@@ -16,7 +16,7 @@
 #define ICMP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + ICMP_DESTINATION_UNREACHABLE_PACKET_LEN)
 #define UDP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_udp_header))
 
-#define UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET 30
+#define PORT_OFFSET_IN_ICMP_PACKET 30
 
 static void send_and_receive_packet_with_retries(const char *scan_type, pcap_t *handle, uint8_t *outgoing_packet, int outgoing_packet_size, const char *filter, struct s_read_packet_result *received_packet, unsigned int timeout_sec)
 {
@@ -52,7 +52,7 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     
     write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-    char *filter = fstring("((tcp && tcp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) && src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
+    char *filter = fstring("((tcp && tcp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) && src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, PORT_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -171,7 +171,7 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
     
     write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-    char *filter = fstring("(tcp && tcp src port %d && src host %s && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE);
+    char *filter = fstring("((tcp && tcp src port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) && src host %s", port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, PORT_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -186,19 +186,10 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
         struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_TCP)
         {
-            struct s_tcp_header * tcp_header = (struct s_tcp_header *) (received_packet_result.packet + sizeof(struct ether_header) + sizeof (struct s_ip_header));
-            if (is_tcp_rst_set(tcp_header))
-            {
-                if (DEBUG) printf(GREEN"SYN SCAN: received TCP RST packet\n"COLOR_RESET);
-                if (DEBUG) printf(GREEN"SYN SCAN: PORT IS CLOSED\n"COLOR_RESET);
-                scan_result = CLOSED;
-            }
-            else 
-            {
-                pcap_close(handle);
-                clean_exit_failure(fstring("Expected RST packet, received:\n %s", tcp_display_string(tcp_header)));
-            }
-        } 
+            if (DEBUG) printf(GREEN"%s SCAN: received TCP RST packet\n"COLOR_RESET, scan_type_to_string(scan_type));
+            if (DEBUG) printf(GREEN"%s SCAN: PORT IS CLOSED\n"COLOR_RESET, scan_type_to_string(scan_type));
+            scan_result = CLOSED;
+        }
         else if (ip_header->protocol_number == IPPROTO_ICMP) 
         {   
             if (DEBUG) printf(GREEN"%s SCAN: received ICMP PORT UNREACHABLE packet\n"COLOR_RESET, scan_type_to_string(scan_type));
@@ -231,12 +222,7 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
     
     uint8_t outgoing_packet[TCP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
-
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
     
-    write_ip_header_local_to_remote(config, IPPROTO_TCP, sizeof(struct s_tcp_header), outgoing_packet + sizeof(struct ether_header));
-    
-    struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
     tcp_parameters.destination_port = port;
@@ -244,14 +230,13 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
     tcp_parameters.window_size = DEFAULT_WINDOW_SIZE;
     tcp_parameters.sequence_number = 0;
     
-    write_tcp_header(outgoing_ip_header, &tcp_parameters, outgoing_packet + TRANSPORT_HEADER_OFFSET);
+    write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-
     //possible responses for ack scan:
     //- TCP RST response - unfiltered
     //- No response received (even after retransmissions) - filtered
     //- ICMP unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)	 - filtered
-    char *filter = fstring("(tcp && tcp src port %d && src host %s && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d)", port, inet_ntoa(config->target_ip), TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE);
+    char *filter = fstring("((tcp && tcp src port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) && src host %s", port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, PORT_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -267,18 +252,9 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
         struct s_ip_header *ip_header = (struct s_ip_header *) (received_packet_result.packet + sizeof(struct ether_header));
         if (ip_header->protocol_number == IPPROTO_TCP)
         {
-            struct s_tcp_header * tcp_header = (struct s_tcp_header *) (received_packet_result.packet + TRANSPORT_HEADER_OFFSET);
-            if (is_tcp_rst_set(tcp_header))
-            {
-                if (DEBUG) printf(GREEN"%s SCAN: received TCP RST packet\n"COLOR_RESET, scan_type);
-                if (DEBUG) printf(GREEN"%s SCAN: PORT IS UNFILTERED\n"COLOR_RESET, scan_type);
-                scan_result = UNFILTERED;
-            }
-            else
-            {
-                pcap_close(handle);
-                clean_exit_failure(fstring("Expected RST packet, received:\n %s", tcp_display_string(tcp_header)));
-            }
+            if (DEBUG) printf(GREEN"%s SCAN: received TCP RST packet\n"COLOR_RESET, scan_type);
+            if (DEBUG) printf(GREEN"%s SCAN: PORT IS UNFILTERED\n"COLOR_RESET, scan_type);
+            scan_result = UNFILTERED;
         } 
         else if (ip_header->protocol_number == IPPROTO_ICMP) 
         {   
@@ -311,10 +287,8 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     uint8_t outgoing_packet[UDP_FULL_HEADER_LEN];
     memset(outgoing_packet, 0, sizeof(outgoing_packet));
 
-    write_ethernet_header_local_to_gateway(config, ETHERTYPE_IP, outgoing_packet);
-    
-    write_ip_header_local_to_remote(config, IPPROTO_UDP, sizeof(struct s_udp_header), outgoing_packet + sizeof(struct ether_header));
-    
+    write_ether_ip_header(config, IPPROTO_UDP, sizeof(struct s_udp_header), outgoing_packet);
+
     struct s_ip_header *outgoing_ip_header = (struct s_ip_header *) (outgoing_packet + sizeof(struct ether_header));
     write_udp_header(outgoing_ip_header, outgoing_packet + TRANSPORT_HEADER_OFFSET, port);
     
@@ -325,7 +299,7 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     //- Other ICMP unreachable errors (type 3, code 1, 2, 9, 10, or 13) - filtered
     
     //DO NOT COVERT LOCAL BYTE ORDER TO NETWORK BYTE ORDER IN FILTER STRING
-    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, UDP_OR_TCP_DESTINATION_PORT_IN_ICMP_ORIGINAL_DATA_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
+    char *filter = fstring("((udp && udp src port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d)) and src host %s", port, ICMP_TYPE_DESTINATION_UNREACHABLE, PORT_OFFSET_IN_ICMP_PACKET, port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
