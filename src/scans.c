@@ -144,6 +144,10 @@ const char *scan_type_to_string(enum scan_type type)
 //to anser with RST on closed ports to packets that don't have SYN, ACK or RST. So this scan is just additional tool that may help to detect closed port protected by specific firewall.
 enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port)
 {
+    if (scan_type == SCAN_SYN || scan_type == SCAN_ACK || scan_type == SCAN_UDP)
+    {
+        clean_exit_failure("This scan type is not supported");
+    }
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type_to_string(scan_type), inet_ntoa(config->target_ip), port);
     
     pcap_t *handle = create_capture_handle(config->device_name);

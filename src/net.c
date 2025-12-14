@@ -1,5 +1,7 @@
 #include "net.h"
 #include "resources.h"
+#include <netinet/in.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
@@ -9,6 +11,8 @@
 #include <stdlib.h>
 #include <netinet/tcp.h>
 #include "color_output.h"
+#include <sys/socket.h>
+#include "utils.h"
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -386,4 +390,24 @@ char *tcp_display_string(struct s_tcp_header *tcp_header)
         "  Urgent Pointer: %u\n", ntohs(tcp_header->urgent_pointer));
 
     return packet_display;
+}
+
+uint32_t get_ipv4_address(const char *host_name_or_ip)
+{
+    struct addrinfo          hints;
+    struct addrinfo          *result_addr_info;
+    memset(&hints, 0, sizeof(hints));
+
+    hints.ai_family = AF_INET;
+    int result = 0;
+
+    if ((result = getaddrinfo(host_name_or_ip,NULL, &hints, &result_addr_info)) != 0)
+    {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
+        clean_exit_failure(fstring(RED"Failed to get IPv4 address for host or ip: %s"COLOR_RESET, host_name_or_ip));
+    }
+    struct sockaddr_in *sockaddr_in = (struct sockaddr_in *)result_addr_info->ai_addr;
+    uint32_t ipv4_address = sockaddr_in->sin_addr.s_addr;
+    freeaddrinfo(result_addr_info);
+    return ipv4_address;
 }

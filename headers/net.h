@@ -162,4 +162,6 @@ void write_full_tcp_header(const struct s_net_config *config, struct s_tcp_param
 
 #define PACKET_READING_TIMEOUT_SEC_DEFAULT 1
 
+uint32_t get_ipv4_address(const char *host_name_or_ip);
+
 #endif
