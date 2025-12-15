@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #define MAX_SCAN_NUMBER 1024
+#define SCAN_TYPES_NUMBER 6
 
 struct s_ports
 {
@@ -11,6 +12,7 @@ struct s_ports
     int16_t end_port;
     int16_t ports[MAX_SCAN_NUMBER];
     uint16_t port_count;
+    bool scan_types[SCAN_TYPES_NUMBER];
 };
 
 struct s_arguments

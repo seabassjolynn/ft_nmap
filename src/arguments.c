@@ -10,6 +10,9 @@
 #include "net.h"
 #include <stdlib.h>
 #include "utils.h"
+#include <limits.h>
+
+#define MAX_SPEEDUP 250
 
 void print_arguments(const struct s_arguments *args)
 {
@@ -39,9 +42,17 @@ static void parse_ports(const char *ports_str, struct s_arguments *arguments)
     int i = 0;
     while (ports_str[i] != '\0')
     {
-        int port = -1;
+        long port = -1;
         char *endptr = NULL;
+        if (!isspace(ports_str[i]) && !isdigit(ports_str[i]))
+        {
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d\n"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
+        }
         port = strtol(&ports_str[i], &endptr, 10);
+        if (port <= 0 || port > UINT16_MAX)
+        {
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number is out of range at position %d\n"COLOR_RESET, i));
+        }
         if (port <= 0)
         {
             clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number must be greater than 0 at position %d\n"COLOR_RESET, i));
@@ -143,9 +154,32 @@ struct s_arguments parse_arguments(int ac, char **av)
                 arguments.ports.end_port = MAX_SCAN_NUMBER;
             }
         } 
-        else if (strcmp("--threads", av[i]) == 0) 
+        else if (strcmp("--speedup", av[i]) == 0) 
         {
-        
+            int next_arg = i + 1;
+            if (next_arg >= ac)
+            {
+                clean_exit_failure(RED"Argument parsing failure: no speedup value provided after --speedup flag"COLOR_RESET);
+            }
+            char *endptr = NULL;
+            long speedup = strtol(av[next_arg], &endptr, 10);
+            
+            if (endptr == av[next_arg] || *endptr != '\0')
+            {
+                clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: invalid speedup value %s\n"COLOR_RESET, av[next_arg]));
+            }
+            
+            if (speedup <= 0 || speedup > MAX_SPEEDUP)
+            {
+                clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: speedup value must be between 0 and %d\n"COLOR_RESET, MAX_SPEEDUP));
+            }
+            
+            arguments.number_of_threads = speedup;
+            i = next_arg;
+        }
+        else if (strcmp("--scan", av[i]) == 0)
+        {
+            
         }
         else
         {
