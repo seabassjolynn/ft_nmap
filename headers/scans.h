@@ -25,6 +25,8 @@ enum scan_type
     SCAN_UDP
 };
 
+const char *scan_type_to_string(enum scan_type type);
+
 enum port_state scan_syn(const struct s_net_config *config, uint16_t port);
 
 enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port);

@@ -36,15 +36,6 @@ void print_arguments(const struct s_arguments *args)
     }
     printf("\n");
     
-    static const char *scan_type_names[] = {
-        [SCAN_FIN]  = "FIN",
-        [SCAN_NULL] = "NULL",
-        [SCAN_XMAS] = "XMAS",
-        [SCAN_SYN]  = "SYN",
-        [SCAN_ACK]  = "ACK",
-        [SCAN_UDP]  = "UDP"
-    };
-    
     printf("  scan_types: ");
     bool scan_printed = false;
     for (int i = 0; i < SCAN_TYPES_NUMBER; i++)
@@ -53,7 +44,7 @@ void print_arguments(const struct s_arguments *args)
         {
             if (scan_printed)
                 printf(", ");
-            printf("%s", scan_type_names[i]);
+            printf("%s", scan_type_to_string(i));
             scan_printed = true;
         }
     }

@@ -122,7 +122,10 @@ const char *scan_type_to_string(enum scan_type type)
     static const char *names[] = {
         [SCAN_FIN]  = "FIN",
         [SCAN_NULL] = "NULL",
-        [SCAN_XMAS] = "XMAS"
+        [SCAN_XMAS] = "XMAS",
+        [SCAN_SYN]  = "SYN",
+        [SCAN_ACK]  = "ACK",
+        [SCAN_UDP]  = "UDP"
     };
     return names[type];
 }
