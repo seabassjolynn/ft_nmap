@@ -9,6 +9,7 @@
 #include "color_output.h"
 #include "net.h"
 #include <stdlib.h>
+#include "scans.h"
 #include "utils.h"
 #include <limits.h>
 
@@ -34,7 +35,88 @@ void print_arguments(const struct s_arguments *args)
         printf("%d", args->ports.ports[i]);
     }
     printf("\n");
+    
+    static const char *scan_type_names[] = {
+        [SCAN_FIN]  = "FIN",
+        [SCAN_NULL] = "NULL",
+        [SCAN_XMAS] = "XMAS",
+        [SCAN_SYN]  = "SYN",
+        [SCAN_ACK]  = "ACK",
+        [SCAN_UDP]  = "UDP"
+    };
+    
+    printf("  scan_types: ");
+    bool scan_printed = false;
+    for (int i = 0; i < SCAN_TYPES_NUMBER; i++)
+    {
+        if (args->ports.scan_types[i])
+        {
+            if (scan_printed)
+                printf(", ");
+            printf("%s", scan_type_names[i]);
+            scan_printed = true;
+        }
+    }
+    
+    if (!scan_printed)
+    {
+        printf("ALL");
+    }
+    printf("\n");
 }
+
+static void parse_scan_types(const char *scan_types_str, struct s_arguments *arguments)
+{
+    int i = 0;
+    while (scan_types_str[i] != '\0')
+    {
+        int flag_len = 3;
+        bool is_flag_detected = false;
+        if (strncmp("SYN", &scan_types_str[i], flag_len) == 0)
+        {
+            arguments->ports.scan_types[SCAN_SYN] = true;
+            is_flag_detected = true;
+        }
+        else if (strncmp("FIN", &scan_types_str[i], flag_len) == 0)
+        {
+            arguments->ports.scan_types[SCAN_FIN] = true;
+            is_flag_detected = true;
+        }
+        else if (strncmp("NULL", &scan_types_str[i], flag_len + 1) == 0)
+        {
+            arguments->ports.scan_types[SCAN_NULL] = true;
+            is_flag_detected = true;
+            flag_len = 4;
+        }
+        else if (strncmp("XMAS", &scan_types_str[i], flag_len + 1) == 0)
+        {
+            arguments->ports.scan_types[SCAN_XMAS] = true;
+            is_flag_detected = true;
+            flag_len = 4;
+        }
+        else if (strncmp("ACK", &scan_types_str[i], flag_len) == 0)
+        {
+            arguments->ports.scan_types[SCAN_ACK] = true;
+            is_flag_detected = true;
+        }
+        else if (strncmp("UDP", &scan_types_str[i], flag_len) == 0)
+        {
+            arguments->ports.scan_types[SCAN_UDP] = true;
+            is_flag_detected = true;
+        }
+        if (!is_flag_detected)
+        {
+            clean_exit_failure(fstring(RED"Argument parsing (scan flag) failure: invalid scan type %s\n"COLOR_RESET, &scan_types_str[i]));
+        }
+        
+        i += flag_len;
+        if (scan_types_str[i] == ',')
+        {
+            i++;
+        }
+    }
+}
+
 //(eg: 1-10 or 1,2,3 or 1,5-15)
 static void parse_ports(const char *ports_str, struct s_arguments *arguments)
 {
@@ -157,29 +239,33 @@ struct s_arguments parse_arguments(int ac, char **av)
         else if (strcmp("--speedup", av[i]) == 0) 
         {
             int next_arg = i + 1;
-            if (next_arg >= ac)
+            if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
-                clean_exit_failure(RED"Argument parsing failure: no speedup value provided after --speedup flag"COLOR_RESET);
-            }
-            char *endptr = NULL;
-            long speedup = strtol(av[next_arg], &endptr, 10);
+                char *endptr = NULL;
+                long speedup = strtol(av[next_arg], &endptr, 10);
             
-            if (endptr == av[next_arg] || *endptr != '\0')
-            {
-                clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: invalid speedup value %s\n"COLOR_RESET, av[next_arg]));
-            }
+                if (endptr == av[next_arg] || *endptr != '\0')
+                {
+                    clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: invalid speedup value %s\n"COLOR_RESET, av[next_arg]));
+                }
             
-            if (speedup <= 0 || speedup > MAX_SPEEDUP)
-            {
-                clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: speedup value must be between 0 and %d\n"COLOR_RESET, MAX_SPEEDUP));
+                if (speedup <= 0 || speedup > MAX_SPEEDUP)
+                {
+                    clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: speedup value must be between 0 and %d\n"COLOR_RESET, MAX_SPEEDUP));
+                }
+                
+                arguments.number_of_threads = speedup;
+                i = next_arg;
             }
-            
-            arguments.number_of_threads = speedup;
-            i = next_arg;
         }
         else if (strcmp("--scan", av[i]) == 0)
         {
-            
+            int next_arg = i + 1;
+            if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
+            {
+                parse_scan_types(av[next_arg], &arguments);
+                i = next_arg;
+            }
         }
         else
         {
