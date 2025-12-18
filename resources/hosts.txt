@@ -1,3 +1,11 @@
-one two three
-hello hello hello
-hi hi hi
+# ft_nmap hosts file
+# Format: <ip> <ports> [scan_types]
+#
+# ip: IP address or hostname
+# ports: range (1-1024) or comma-separated (80,443,8080)
+# scan_types (optional): SYN,FIN,NULL,XMAS,ACK,UDP (if omitted, all types are used)
+
+# Example hosts:
+scanme.nmap.org 22,80,443 SYN,UDP
+192.168 1-100 SYN,ACK
+10.0.0.1 1-10 ACK,UDP

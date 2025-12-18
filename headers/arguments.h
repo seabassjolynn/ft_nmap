@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #define MAX_SCAN_NUMBER 1024
 #define SCAN_TYPES_NUMBER 6
-#define MAX_FILE_HOSTS 10
+#define MAX_HOSTS 10
 struct s_host_scans
 {
     uint32_t target_ip;
@@ -19,8 +19,8 @@ struct s_host_scans
 struct s_arguments
 {
     bool is_help_requested;
-    struct s_host_scans file_host_scans[MAX_FILE_HOSTS];
-    struct s_host_scans arg_host_scans;
+    struct s_host_scans hosts[MAX_HOSTS];
+    int hosts_size;
     uint8_t number_of_threads;
 };
 

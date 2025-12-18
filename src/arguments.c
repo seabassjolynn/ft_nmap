@@ -15,25 +15,24 @@
 
 #define MAX_SPEEDUP 250
 
-void print_arguments(const struct s_arguments *args)
+static void validate_arguments(const struct s_arguments *args);
+
+static void print_host_scans(const struct s_host_scans *host_scans, int index)
 {
-    printf("Arguments:\n");
-    printf("  is_help_requested: %s\n", args->is_help_requested ? "true" : "false");
-    printf("  number_of_threads: %u\n", args->number_of_threads);
+    printf("--- host %d ---\n", index);
     
     struct in_addr ip_addr;
-    ip_addr.s_addr = args->arg_host_scans.target_ip;
-    printf("---argument scan data---\n");
+    ip_addr.s_addr = host_scans->target_ip;
     printf("  target_ip: %s\n", inet_ntoa(ip_addr));
     
     printf("  ports:\n");
-    printf("    range: %d-%d\n", args->arg_host_scans.start_port, args->arg_host_scans.end_port);
+    printf("    range: %d-%d\n", host_scans->start_port, host_scans->end_port);
     printf("    ports: ");
-    for (int i = 0; i < MAX_SCAN_NUMBER && args->arg_host_scans.ports[i] != 0; i++)
+    for (int i = 0; i < MAX_SCAN_NUMBER && host_scans->ports[i] != 0; i++)
     {
         if (i > 0)
             printf(", ");
-        printf("%d", args->arg_host_scans.ports[i]);
+        printf("%d", host_scans->ports[i]);
     }
     printf("\n");
     
@@ -41,7 +40,7 @@ void print_arguments(const struct s_arguments *args)
     bool scan_printed = false;
     for (int i = 0; i < SCAN_TYPES_NUMBER; i++)
     {
-        if (args->arg_host_scans.scan_types[i])
+        if (host_scans->scan_types[i])
         {
             if (scan_printed)
                 printf(", ");
@@ -57,7 +56,20 @@ void print_arguments(const struct s_arguments *args)
     printf("\n");
 }
 
-static void parse_scan_types(const char *scan_types_str, struct s_arguments *arguments)
+void print_arguments(const struct s_arguments *args)
+{
+    printf("Arguments:\n");
+    printf("  is_help_requested: %s\n", args->is_help_requested ? "true" : "false");
+    printf("  number_of_threads: %u\n", args->number_of_threads);
+    printf("  hosts_size: %d\n", args->hosts_size);
+    
+    for (int i = 0; i < args->hosts_size; i++)
+    {
+        print_host_scans(&args->hosts[i], i);
+    }
+}
+
+static void parse_scan_types(const char *scan_types_str, struct s_host_scans *host_scans)
 {
     int i = 0;
     while (scan_types_str[i] != '\0')
@@ -66,39 +78,39 @@ static void parse_scan_types(const char *scan_types_str, struct s_arguments *arg
         bool is_flag_detected = false;
         if (strncmp("SYN", &scan_types_str[i], flag_len) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_SYN] = true;
+            host_scans->scan_types[SCAN_SYN] = true;
             is_flag_detected = true;
         }
         else if (strncmp("FIN", &scan_types_str[i], flag_len) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_FIN] = true;
+            host_scans->scan_types[SCAN_FIN] = true;
             is_flag_detected = true;
         }
         else if (strncmp("NULL", &scan_types_str[i], flag_len + 1) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_NULL] = true;
+            host_scans->scan_types[SCAN_NULL] = true;
             is_flag_detected = true;
             flag_len = 4;
         }
         else if (strncmp("XMAS", &scan_types_str[i], flag_len + 1) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_XMAS] = true;
+            host_scans->scan_types[SCAN_XMAS] = true;
             is_flag_detected = true;
             flag_len = 4;
         }
         else if (strncmp("ACK", &scan_types_str[i], flag_len) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_ACK] = true;
+            host_scans->scan_types[SCAN_ACK] = true;
             is_flag_detected = true;
         }
         else if (strncmp("UDP", &scan_types_str[i], flag_len) == 0)
         {
-            arguments->arg_host_scans.scan_types[SCAN_UDP] = true;
+            host_scans->scan_types[SCAN_UDP] = true;
             is_flag_detected = true;
         }
         if (!is_flag_detected)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (scan flag) failure: invalid scan type %s\n"COLOR_RESET, &scan_types_str[i]));
+            clean_exit_failure(fstring(RED"Argument parsing (scan flag) failure: invalid scan type %s"COLOR_RESET, &scan_types_str[i]));
         }
         
         i += flag_len;
@@ -110,7 +122,7 @@ static void parse_scan_types(const char *scan_types_str, struct s_arguments *arg
 }
 
 //(eg: 1-10 or 1,2,3 or 1,5-15)
-static void parse_ports(const char *ports_str, struct s_arguments *arguments)
+static void parse_ports(const char *ports_str, struct s_host_scans *host_scans)
 {
     bool is_lower_bound_ecnountered = false;
     int i = 0;
@@ -120,30 +132,30 @@ static void parse_ports(const char *ports_str, struct s_arguments *arguments)
         char *endptr = NULL;
         if (!isspace(ports_str[i]) && !isdigit(ports_str[i]))
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d\n"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
         }
         port = strtol(&ports_str[i], &endptr, 10);
         if (port <= 0 || port > UINT16_MAX)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number is out of range at position %d\n"COLOR_RESET, i));
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number is out of range at position %d"COLOR_RESET, i));
         }
         if (port <= 0)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number must be greater than 0 at position %d\n"COLOR_RESET, i));
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number must be greater than 0 at position %d"COLOR_RESET, i));
         }
         if (endptr == &ports_str[i])
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: non numeric character %c (ascii code %d) at position %d\n"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: non numeric character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
         }
         if (*endptr == '\0')
         {
             if (is_lower_bound_ecnountered)
             {
-                arguments->arg_host_scans.end_port = port;
+                host_scans->end_port = port;
             } 
             else 
             {
-                arguments->arg_host_scans.ports[arguments->arg_host_scans.port_count++] = port;
+                host_scans->ports[host_scans->port_count++] = port;
             }
             break;
         }
@@ -151,105 +163,166 @@ static void parse_ports(const char *ports_str, struct s_arguments *arguments)
         {
             if (is_lower_bound_ecnountered)
             {
-                clean_exit_failure("Arguement parsing failure: port upper bound can not have comma separated numbers");
+                clean_exit_failure("Argument parsing failure: port upper bound can not have comma separated numbers");
             }
-            arguments->arg_host_scans.ports[arguments->arg_host_scans.port_count++] = port;
+            host_scans->ports[host_scans->port_count++] = port;
             i = endptr - ports_str; // index of the comma, at the end of the cycle we move to potential next port
             if (ports_str[i + 1] == '\0')
             {
-                clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port expected after ','\n"COLOR_RESET));
+                clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port expected after ','"COLOR_RESET));
             }
         }
         else if (*endptr == '-')
         {
-            arguments->arg_host_scans.start_port = port;
+            host_scans->start_port = port;
             is_lower_bound_ecnountered = true;
             i = endptr - ports_str; // index of the -, at the end of the cycle we move to potential next port
         } 
         else 
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d\n"COLOR_RESET, *endptr, (int) *endptr, endptr - ports_str));
+            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, *endptr, (int) *endptr, (int)(endptr - ports_str)));
         }
         i++;
     }
-    
-    if (arguments->arg_host_scans.start_port == -1 && arguments->arg_host_scans.end_port == -1 && arguments->arg_host_scans.port_count == 0)
-    {
-        clean_exit_failure("Arguement parsing failure: no ports provided");
-    }
-    
-    if (arguments->arg_host_scans.end_port <= arguments->arg_host_scans.start_port && (arguments->arg_host_scans.start_port != -1 && arguments->arg_host_scans.end_port != -1))
-    {
-        clean_exit_failure("Arguement parsing failure: port lower bound is greater than or equal to port upper bound");
-    }
-
-    if (arguments->arg_host_scans.end_port - arguments->arg_host_scans.start_port > MAX_SCAN_NUMBER)
-    {
-        clean_exit_failure(fstring("Arguement parsing failure: port range is too large, max is %d", MAX_SCAN_NUMBER));
-    }
 }
+
+// File format: one host per line
+// <ip> <ports> [scan_types]
+// 
+// Examples:
+// 192.168.1.1 1-1024 SYN,ACK
+// 192.168.1.2 80,443,8080 UDP
+// 10.0.0.1 22-100
+// scanme.nmap.org 1-100 SYN,FIN,NULL,XMAS,ACK,UDP
+//
+// - ip: IP address or hostname
+// - ports: range (e.g., 1-1024) or comma-separated (e.g., 80,443,8080)
+// - scan_types (optional): comma-separated scan types (SYN,FIN,NULL,XMAS,ACK,UDP)
+//   If not provided, all scan types are used
 
 static void parse_file(const char *file_path, struct s_arguments *arguments)
 {
-    (void)arguments;
     FILE *file = fopen(file_path, "r");
     if (file == NULL)
     {
-        fclose(file);
         clean_exit_failure(fstring(RED"Argument parsing failure: failed to open file %s\n"COLOR_RESET, file_path));
     }
     
     char line[1024];
+    char original_line[1024];
+    int line_number = 0;
+    
     while (fgets(line, sizeof(line), file) != NULL)
     {
-        char *token = strtok(line, " ");
-        int i = 0;
-        while (token != NULL)
+        line_number++;
+        
+        // Remove trailing newline
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n')
         {
-            arguments->file_host_scans[i].ports[arguments->file_host_scans[i].port_count++] = atoi(token);
-            token = strtok(NULL, " ");
+            line[len - 1] = '\0';
         }
+        
+        // Save original line for error messages (strtok modifies the string)
+        strncpy(original_line, line, sizeof(original_line) - 1);
+        original_line[sizeof(original_line) - 1] = '\0';
+        
+        // Skip empty lines and comments
+        if (line[0] == '\0' || line[0] == '#')
+        {
+            continue;
+        }
+        
+        if (arguments->hosts_size >= MAX_HOSTS)
+        {
+            fclose(file);
+            clean_exit_failure(fstring(RED"File parsing failure: too many hosts, max is %d\n  line %d: %s"COLOR_RESET, MAX_HOSTS, line_number, original_line));
+        }
+        
+        struct s_host_scans *host = &arguments->hosts[arguments->hosts_size];
+        
+        // Parse IP (first token)
+        char *ip_str = strtok(line, " \t");
+        if (ip_str == NULL)
+        {
+            continue;
+        }
+        host->target_ip = get_ipv4_address(ip_str);
+        
+        // Parse ports (second token)
+        char *ports_str = strtok(NULL, " \t");
+        if (ports_str == NULL)
+        {
+            fclose(file);
+            clean_exit_failure(fstring(RED"File parsing failure: missing ports\n  line %d: %s"COLOR_RESET, line_number, original_line));
+        }
+        parse_ports(ports_str, host);
+        
+        // Parse scan types (third token, optional)
+        char *scan_types_str = strtok(NULL, " \t");
+        if (scan_types_str != NULL)
+        {
+            parse_scan_types(scan_types_str, host);
+        }
+        
+        arguments->hosts_size++;
     }
 
     fclose(file);
+    
+    if (arguments->hosts_size == 0)
+    {
+        clean_exit_failure(RED"File parsing failure: no hosts found in file\n"COLOR_RESET);
+    }
+}
+
+static void init_host_scans(struct s_arguments *arguments)
+{
+    for (int i = 0; i < MAX_HOSTS; i++)
+    {
+        struct s_host_scans *host_scans = &arguments->hosts[i];
+        host_scans->target_ip = 0;
+        host_scans->start_port = -1;
+        host_scans->end_port = -1;
+        memset(host_scans->ports, 0, sizeof(host_scans->ports));
+        host_scans->port_count = 0;
+        memset(host_scans->scan_types, 0, sizeof(host_scans->scan_types));
+    }
 }
 
 struct s_arguments parse_arguments(int ac, char **av)
 {
     if (DEBUG) { printf("Parsing arguments\n"); }
     struct s_arguments arguments;
-    arguments.is_help_requested = false;
-    arguments.number_of_threads = 0;
-    arguments.arg_host_scans.target_ip = 0;
-    arguments.arg_host_scans.port_count = 0;
-    arguments.arg_host_scans.start_port = -1;
-    arguments.arg_host_scans.end_port = -1;
-    memset(arguments.arg_host_scans.ports, 0, sizeof(arguments.arg_host_scans.ports));
+    memset(arguments.hosts, 0, sizeof(arguments.hosts));
+    init_host_scans(&arguments);
     int i = 1;
-    while (i < ac) 
+    while (i < ac)
     {
         if (strcmp("--help", av[i]) == 0)
         {
             arguments.is_help_requested = true;
+            arguments.hosts_size = 0;
         }
         else if (strcmp("--ip", av[i]) == 0)
         {
+            arguments.hosts_size = 1;
             i++;
             if (i >= ac) { clean_exit_failure(RED"Argument parsing failure: no IP address provided after --ip flag"COLOR_RESET); }
-            arguments.arg_host_scans.target_ip = get_ipv4_address(av[i]);
+            arguments.hosts[arguments.hosts_size].target_ip = get_ipv4_address(av[i]);
         }
         else if (strcmp("--ports", av[i]) == 0)
         {
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
-                parse_ports(av[next_arg], &arguments);
+                parse_ports(av[next_arg], &arguments.hosts[arguments.hosts_size]);
                 i = next_arg;
             }
             else
             {
-                arguments.arg_host_scans.start_port = 1;
-                arguments.arg_host_scans.end_port = MAX_SCAN_NUMBER;
+                arguments.hosts[arguments.hosts_size].start_port = 1;
+                arguments.hosts[arguments.hosts_size].end_port = MAX_SCAN_NUMBER;
             }
         } 
         else if (strcmp("--speedup", av[i]) == 0) 
@@ -279,12 +352,16 @@ struct s_arguments parse_arguments(int ac, char **av)
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
-                parse_scan_types(av[next_arg], &arguments);
+                parse_scan_types(av[next_arg], &arguments.hosts[arguments.hosts_size]);
                 i = next_arg;
             }
         }
         else if (strcmp("--file", av[i]) == 0)
         {
+            if (i != 1)
+            {
+                clean_exit_failure(fstring(RED"Argument parsing failure: --file flag must be the first argument\n"COLOR_RESET));
+            }
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
@@ -303,11 +380,60 @@ struct s_arguments parse_arguments(int ac, char **av)
         i++;
     }
     
+    
+
     if (DEBUG) { print_arguments(&arguments); }
     
-    if (arguments.arg_host_scans.target_ip == 0)
-    {
-        clean_exit_failure("Arguement parsing failure: no target IP address provided");
-    }
+    validate_arguments(&arguments);
+    
     return arguments;
+}
+
+static void validate_arguments(const struct s_arguments *args)
+{
+    if (args->is_help_requested)
+    {
+        return;
+    }
+    
+    if (args->hosts_size == 0)
+    {
+        clean_exit_failure("Argument validation failure: no hosts provided (use --ip or --file)");
+    }
+    
+    for (int i = 0; i < args->hosts_size; i++)
+    {
+        const struct s_host_scans *host = &args->hosts[i];
+        
+        if (host->target_ip == 0)
+        {
+            clean_exit_failure(fstring("Argument validation failure: host %d has no IP address", i));
+        }
+        
+        bool has_ports = host->port_count > 0 || (host->start_port != -1 && host->end_port != -1);
+        if (!has_ports)
+        {
+            clean_exit_failure(fstring("Argument validation failure: host %d has no ports specified", i));
+        }
+        
+        if (host->start_port != -1 && host->start_port < 1)
+        {
+            clean_exit_failure(fstring("Argument validation failure: host %d start port must be >= 1", i));
+        }
+        
+        if (host->start_port != -1 && host->end_port != -1 && host->end_port <= host->start_port)
+        {
+            clean_exit_failure(fstring("Argument validation failure: host %d end port must be greater than start port", i));
+        }
+        
+        int total_ports = host->port_count;
+        if (host->start_port != -1 && host->end_port != -1)
+        {
+            total_ports += host->end_port - host->start_port + 1;
+        }
+        if (total_ports > MAX_SCAN_NUMBER)
+        {
+            clean_exit_failure(fstring("Argument validation failure: host %d has too many ports (%d), max is %d", i, total_ports, MAX_SCAN_NUMBER));
+        }
+    }
 }
