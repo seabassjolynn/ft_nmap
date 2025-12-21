@@ -7,11 +7,14 @@
 #include <string.h>
 #include "color_output.h"
 #include "resources.h"
+#include "unique_ids.h"
 
 static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
 {   
+    if (DEBUG) { printf("Host discovery: sending echo ping to host %s\n", inet_ntoa(config->target_ip));}
+
     char icmp_data[15] = "are you alive?";
-    uint16_t icmp_identifier = getpid();
+    uint16_t icmp_identifier = get_unique_id();
     int expected_packet_len = sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_icmp_header) + sizeof(icmp_data);
     uint8_t packet[expected_packet_len];
 
@@ -31,6 +34,8 @@ static bool ping_echo_remote(const struct s_net_config *config, pcap_t *handle)
 
 static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *handle) 
 {
+    if (DEBUG) { printf("Host discovery: sending time stamp request to host %s\n", inet_ntoa(config->target_ip));}
+    
     int icmp_payload_len = 12;
     char icmp_data[12];
     memset(icmp_data, 0, sizeof(icmp_data));
@@ -42,7 +47,8 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
     
     write_ether_ip_header(config, IPPROTO_ICMP, sizeof(struct s_icmp_header) + icmp_payload_len, packet);
 
-    uint16_t icmp_identifier = getpid();
+    uint16_t icmp_identifier = get_unique_id();
+    
     write_icmp_timestamp_request(icmp_identifier, (uint8_t*)icmp_data, icmp_payload_len, packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
 
     send_packet(handle, packet, packet_len);
@@ -56,12 +62,13 @@ static bool ping_timestamp_remote(const struct s_net_config *config, pcap_t *han
 }
 
 static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pcap_t *handle)
-{
+{   
     uint8_t packet[sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header)];
     memset(&packet, 0, sizeof(packet));
     
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
+    tcp_parameters.source_port = get_unique_id();
     tcp_parameters.destination_port = 80;
     tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_SYN;
     tcp_parameters.window_size = 1024;
@@ -69,11 +76,10 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
 
     write_full_tcp_header(config, tcp_parameters, packet);
     
+    if (DEBUG) { printf("Host discovery: sending tcp syn to host %s, source port %d destination port %d", inet_ntoa(config->target_ip), tcp_parameters.source_port, tcp_parameters.destination_port);}
+
     send_packet(handle, packet, sizeof(packet));
-    int options_syn_ack = 0;
-    options_syn_ack = options_syn_ack | TCP_FLAG_SYN;
-    options_syn_ack = options_syn_ack | TCP_FLAG_ACK;
-    char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_syn_ack);
+    char *filter = fstring("tcp and tcp src port %d and tcp dst port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, tcp_parameters.source_port, inet_ntoa(config->target_ip), TCP_FLAG_SYN | TCP_FLAG_ACK);
     
     struct s_read_packet_result received_packet_result;
     init_read_packet_result(&received_packet_result);
@@ -81,7 +87,7 @@ static bool probe_with_tcp_syn_to_port_80(const struct s_net_config *config, pca
     if (received_packet_result.packet != NULL) {
         init_tcp_parameters(&tcp_parameters);
         tcp_parameters.destination_port = 80;
-        tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST; // | TCP_FLAG_ACK;
+        tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_RST;
         tcp_parameters.window_size = 0;
         tcp_parameters.sequence_number = 1;
         tcp_parameters.ack_number = 0;
@@ -100,6 +106,7 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
     
     struct s_tcp_parameters tcp_parameters;
     init_tcp_parameters(&tcp_parameters);
+    tcp_parameters.source_port = get_unique_id();
     tcp_parameters.destination_port = 443;
     tcp_parameters.flags = tcp_parameters.flags | TCP_FLAG_SYN;
     tcp_parameters.window_size = 1024;
@@ -107,11 +114,11 @@ static bool probe_with_tcp_syn_to_port_443(const struct s_net_config *config, pc
 
     write_full_tcp_header(config, tcp_parameters, packet);
     
+    if (DEBUG) { printf("Host discovery: sending tcp syn to host %s, source port %d destination port %d", inet_ntoa(config->target_ip), tcp_parameters.source_port, tcp_parameters.destination_port);}
+
     send_packet(handle, packet, sizeof(packet));
-    int options_rst = 0;
-    options_rst = options_rst | TCP_FLAG_RST;
-    options_rst = options_rst | TCP_FLAG_ACK;
-    char *filter = fstring("tcp and tcp src port %d and src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, inet_ntoa(config->target_ip), options_rst);
+
+    char *filter = fstring("tcp and tcp src port %d and and tcp dst port %d src host %s and tcp[tcpflags] == %d", tcp_parameters.destination_port, tcp_parameters.source_port, inet_ntoa(config->target_ip), TCP_FLAG_RST | TCP_FLAG_ACK);
     
     struct s_read_packet_result received_packet_result;
     init_read_packet_result(&received_packet_result);

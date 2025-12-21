@@ -259,7 +259,7 @@ void write_tcp_header(struct  s_ip_header *ip_header, struct s_tcp_parameters *p
     struct s_tcp_header tcp_header;
     memset(&tcp_header, 0, sizeof(struct s_tcp_header));
 
-    tcp_header.source_port = htons(42000); //random port
+    tcp_header.source_port = htons(parameters->source_port);
     tcp_header.destination_port = htons(parameters->destination_port);
     tcp_header.sequence_number = htonl(parameters->sequence_number);
     tcp_header.acqnowledgement_number = htonl(parameters->ack_number);
@@ -290,7 +290,7 @@ void write_full_tcp_header(const struct s_net_config *config, struct s_tcp_param
     write_tcp_header(ip_header, &tcp_parameters, packet + sizeof(struct ether_header) + sizeof(struct s_ip_header));
 }
 
-void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port)
+void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t source_port, uint16_t destination_port)
 {
     struct s_udp_header *udp_header = (struct s_udp_header *)packet;
     udp_header->src_port = htons(42000); //random port

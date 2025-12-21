@@ -127,6 +127,7 @@ struct s_ip_pseudo_header
 
 struct s_tcp_parameters
 {
+    uint16_t source_port;
     uint16_t destination_port;
     uint8_t flags;
     uint32_t sequence_number;
@@ -154,7 +155,7 @@ bool is_tcp_rst_set(struct s_tcp_header *tcp_header);
 
 char *tcp_display_string(struct s_tcp_header *tcp_header);
 
-void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t destination_port);
+void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t source_port, uint16_t destination_port);
 
 void write_ether_ip_header(const struct s_net_config *config, uint8_t transport_protocol, uint16_t payload_len, uint8_t *packet);
 
