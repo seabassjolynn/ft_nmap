@@ -1,16 +1,16 @@
+#include "arguments.h"
 #include "net.h"
 #include "pcap_utils.h"
 #include "scans.h"
 #include "resources.h"
-#include "utils.h"
 #include "color_output.h"
-#include "debug.h"
-
+#include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <string.h>
 #include "unique_ids.h"
+#include "queue.h"
 
 #define MAX_NO_RESPONSE_RETRIES 2
 #define TCP_FULL_HEADER_LEN (sizeof(struct ether_header) + sizeof(struct s_ip_header) + sizeof(struct s_tcp_header))
@@ -20,6 +20,10 @@
 
 #define REMOTE_PORT_IN_ICMP_PACKET_OFFSET 30
 #define LOCAL_PORT_IN_ICMP_PACKET_OFFSET 28
+
+#define LOG_TAG "Port scan: "
+
+struct scan_result *g_scan_results = NULL;
 
 static void send_and_receive_packet_with_retries(const char *scan_type, pcap_t *handle, uint8_t *outgoing_packet, int outgoing_packet_size, const char *filter, struct s_read_packet_result *received_packet, unsigned int timeout_sec)
 {
@@ -36,7 +40,7 @@ static void send_and_receive_packet_with_retries(const char *scan_type, pcap_t *
 
 //The scan can detect open, closed and filtered ports.
 //If RST is received back - port is closed, ICPM (destination unreachable) - port is filtered, no response - port is open or filtered.
-enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
+static enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
 {
     char *scan_type = "SYN";
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
@@ -56,7 +60,8 @@ enum port_state scan_syn(const struct s_net_config *config, uint16_t port)
     
     write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-    char *filter = fstring("((tcp && tcp src port %d && tcp dst port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
+    char filter[512];
+    snprintf(filter, sizeof(filter), "((tcp && tcp src port %d && tcp dst port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -149,7 +154,7 @@ const char *scan_type_to_string(enum scan_type type)
 // This scan is useful in the situation, when closed port is protected by a firewall. So SYN scan receives no reply and we don't know if the port opened or closed. We can only say it is filtered.
 //Some times the firewalls only drop the incoming SYN packets. So this scan can surpass anti-SYN firewall protection and detect closed ports. Althogh such firewalls are rare and the OS is not necessarily configured
 //to anser with RST on closed ports to packets that don't have SYN, ACK or RST. So this scan is just additional tool that may help to detect closed port protected by specific firewall.
-enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port)
+static enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port)
 {
     if (scan_type == SCAN_SYN || scan_type == SCAN_ACK || scan_type == SCAN_UDP)
     {
@@ -183,7 +188,8 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
     
     write_full_tcp_header(config, tcp_parameters, outgoing_packet);
     
-    char *filter = fstring("((tcp && tcp src port %d && tcp dst port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
+    char filter[512];
+    snprintf(filter, sizeof(filter), "((tcp && tcp src port %d && tcp dst port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -225,7 +231,7 @@ enum port_state scan(enum scan_type scan_type, const struct s_net_config *config
 //When scanning unfiltered systems, open and closed ports will both return a RST packet. 
 //Nmap then labels them as unfiltered, meaning that they are reachable by the ACK packet, but whether they are open or closed is undetermined. 
 //Ports that don't respond, or send certain ICMP error messages back, are labeled filtered.
-enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
+static enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
 {
     char *scan_type = "ACK";
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
@@ -249,7 +255,8 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
     //- TCP RST response - unfiltered
     //- No response received (even after retransmissions) - filtered
     //- ICMP unreachable error (type 3, code 1, 2, 3, 9, 10, or 13)	 - filtered
-    char *filter = fstring("((tcp && tcp src port %d && tcp dst port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
+    char filter[512];
+    snprintf(filter, sizeof(filter), "((tcp && tcp src port %d && tcp dst port %d && tcp[tcpflags] == %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) && src host %s", port, tcp_parameters.source_port, TCP_FLAG_RST, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, tcp_parameters.source_port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -290,7 +297,7 @@ enum port_state scan_ack(const struct s_net_config *config, uint16_t port)
     return scan_result;
 }
 
-enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
+static enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
 {
     char *scan_type = "UDP";
     if (DEBUG) printf(GREEN"%s SCAN: target ip %s, port %d\n"COLOR_RESET, scan_type, inet_ntoa(config->target_ip), port);
@@ -313,7 +320,8 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
     //- Other ICMP unreachable errors (type 3, code 1, 2, 9, 10, or 13) - filtered
     
     //DO NOT COVERT LOCAL BYTE ORDER TO NETWORK BYTE ORDER IN FILTER STRING
-    char *filter = fstring("((udp && udp src port %d && udp dst port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) and src host %s", port, source_port, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, source_port, inet_ntoa(config->target_ip));
+    char filter[512];
+    snprintf(filter, sizeof(filter), "((udp && udp src port %d && udp dst port %d) or (icmp && icmp[icmptype] == %d && icmp[%d:2] == %d && icmp[%d:2] == %d)) and src host %s", port, source_port, ICMP_TYPE_DESTINATION_UNREACHABLE, REMOTE_PORT_IN_ICMP_PACKET_OFFSET, port, LOCAL_PORT_IN_ICMP_PACKET_OFFSET, source_port, inet_ntoa(config->target_ip));
     
     enum port_state scan_result = UNKNOWN;
 
@@ -364,4 +372,149 @@ enum port_state scan_udp(const struct s_net_config *config, uint16_t port)
         clean_exit_failure("Failed to detect port state");
     }
     return scan_result;
+}
+
+static enum port_state scan_fin(const struct s_net_config *net_config, uint16_t port)
+{
+    return scan(SCAN_FIN, net_config, port);   
+}
+
+static enum port_state scan_null(const struct s_net_config *net_config, uint16_t port)
+{
+    return scan(SCAN_NULL, net_config, port);   
+}
+
+static enum port_state scan_xmas(const struct s_net_config *net_config, uint16_t port)
+{
+    return scan(SCAN_XMAS, net_config, port);   
+}
+
+static struct s_task create_port_scan_task_for_port_and_type(uint16_t port, enum scan_type scan_type, const struct s_net_config *net_config)
+{
+    if (DEBUG) { printf(LOG_TAG"Creating task for %s scan\n", scan_type_to_string(scan_type)); }
+    struct s_task task;
+    memset(&task, 0, sizeof(struct s_task));
+    task.is_scan = true;
+    task.net_config = *net_config;
+    task.port = port;
+    switch (scan_type)
+    {
+        case SCAN_FIN:
+            task.scan_func = &scan_fin;
+            break;
+        case SCAN_NULL:
+            task.scan_func = &scan_null;
+            break;
+        case SCAN_XMAS:
+            task.scan_func = &scan_xmas;
+            break;
+        case SCAN_SYN:
+            task.scan_func = &scan_syn;
+            break;
+        case SCAN_ACK:
+            task.scan_func = &scan_ack;
+            break;
+        case SCAN_UDP:
+            task.scan_func = &scan_udp;
+            break;
+        default:
+            clean_exit_failure(LOG_TAG"Encountered unexpected scan type\n");
+    }
+    return task;
+}
+
+static void create_port_scan_tasks_for_port_add_add_to_queue(uint16_t port, bool scan_types[], const struct s_net_config *net_config)
+{        
+    if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for port %d\n", port); }
+    
+    bool found_scan_type = false;
+    int j = 0;
+    while (j < SCAN_TYPES_NUMBER)
+    {
+        if (scan_types[j])
+        {
+            found_scan_type = true;
+            struct s_task task = create_port_scan_task_for_port_and_type(port, j, net_config);
+            queue_add(task);
+        }
+        j++;
+    }
+    
+    if (!found_scan_type) 
+    {
+        if (DEBUG) { printf(LOG_TAG"Creating tasks for ALL scan types\n"); }
+        j = 0;
+        while (j < SCAN_TYPES_NUMBER)
+        {
+            struct s_task task = create_port_scan_task_for_port_and_type(port, j, net_config);
+            queue_add(task);
+            j++;
+        }
+    }
+}
+
+static void create_port_scan_tasks_and_add_to_queue(struct s_arguments *arguments, uint32_t host_ip, const struct s_net_config *net_config)
+{
+    struct s_host_scans *host = get_host_scans_by_ip(arguments, host_ip);
+    if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for host %s\n", inet_ntoa( (struct in_addr) {host->target_ip})); }
+    if (host->comma_separated_port_count > 0)
+    {
+        if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for comma separated ports\n"); }
+        int i = 0;
+        while (i < host->comma_separated_port_count)
+        {
+            int port = host->comma_separated_ports[i];
+            create_port_scan_tasks_for_port_add_add_to_queue(port, host->scan_types, net_config);
+            i++;
+        }
+    }
+
+    if (is_port_range_set(host))
+    {
+        if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks ports range\n"); }
+        int start_port = host->start_port;
+        int end_port = host->end_port;
+        while (start_port <= end_port)
+        {
+            create_port_scan_tasks_for_port_add_add_to_queue(start_port, host->scan_types, net_config);
+            start_port++;
+        }
+    }
+}
+
+void create_scan_port_tasks_and_add_to_queue(struct s_arguments *arguments)
+{
+    int i = 0;
+    struct in_addr current_target;
+    current_target.s_addr = 0;
+    bool is_host_up = false;
+    while (i < g_completed_task_count)
+    {
+        struct s_task task = g_queue[i];
+        if (current_target.s_addr != task.net_config.target_ip.s_addr)
+        {
+            if (i != 0)
+            {
+                if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( current_target)), is_host_up ? "up" : "down"); }
+                if (is_host_up)
+                {
+                    
+                    create_port_scan_tasks_and_add_to_queue(arguments, current_target.s_addr, &task.net_config);
+                }
+            }
+            current_target.s_addr = task.net_config.target_ip.s_addr;
+            is_host_up = false;
+        }
+        if (task.is_host_up_result)
+        {
+            is_host_up = true;
+        }
+        i++;
+    }
+    if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( current_target)), is_host_up ? "up" : "down"); }
+    if (is_host_up)
+    {
+        struct s_task task = g_queue[i];
+        create_port_scan_tasks_and_add_to_queue(arguments, current_target.s_addr, &task.net_config);
+    }
 }

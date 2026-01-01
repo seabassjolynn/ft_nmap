@@ -2,8 +2,8 @@
 #define HOST_UP_CHECK_H
 
 #include <stdbool.h>
-#include "net.h"
+#include "arguments.h"
 
-bool is_host_up(const struct s_net_config *config);
+void create_host_discovery_tasks_and_add_to_queue(struct s_arguments *arguments, struct s_net_config *net_config);
 
 #endif

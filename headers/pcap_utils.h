@@ -5,7 +5,7 @@
 
 struct s_read_packet_result
 {
-    uint8_t *packet;
+    const uint8_t *packet;
     int packet_len;
 };
 

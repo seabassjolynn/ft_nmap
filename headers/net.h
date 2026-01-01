@@ -23,6 +23,7 @@
 #define NON_PROMISCUOUS 0
 #define FULL_LENGTH_PACKET 262144
 #define DO_NOT_WAIT_TO_ACUMULATE_PACKETS 0
+#define MAX_ER_MSG_LEN 4096
 
 struct in_addr local_ip_for_internet_connection(void);
 

@@ -1,6 +1,7 @@
 #ifndef ARGUMENTS_H
 #define ARGUMENTS_H
 
+#include "net.h"
 #include <stdint.h>
 #include <stdbool.h>
 #define MAX_SCAN_NUMBER 1024
@@ -11,8 +12,8 @@ struct s_host_scans
     uint32_t target_ip;
     int16_t start_port;
     int16_t end_port;
-    int16_t ports[MAX_SCAN_NUMBER];
-    uint16_t port_count;
+    int16_t comma_separated_ports[MAX_SCAN_NUMBER];
+    uint16_t comma_separated_port_count;
     bool scan_types[SCAN_TYPES_NUMBER];
 };
 
@@ -27,5 +28,9 @@ struct s_arguments
 void print_arguments(const struct s_arguments *args);
 
 struct s_arguments parse_arguments(int argc, char *argv[]);
+
+bool is_port_range_set(struct s_host_scans *host);
+
+struct s_host_scans *get_host_scans_by_ip(struct s_arguments *arguments, uint32_t ip);
 
 #endif

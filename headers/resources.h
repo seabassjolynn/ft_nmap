@@ -3,6 +3,16 @@
 
 #include <unistd.h>
 
+struct resources
+{
+    void *queue;
+    void *threads_storage;
+};
+
+extern struct resources g_resources;
+
+
+void init_resources();
 
 void free_resources();
 

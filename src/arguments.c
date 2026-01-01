@@ -1,19 +1,19 @@
 #include "arguments.h"
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <string.h>
-#include "debug.h"
 #include "resources.h"
 #include "color_output.h"
 #include "net.h"
 #include <stdlib.h>
 #include "scans.h"
-#include "utils.h"
 #include <limits.h>
 
 #define MAX_SPEEDUP 250
+#define LOG_TAG "Arguments: "
 
 static void validate_arguments(const struct s_arguments *args);
 
@@ -28,11 +28,11 @@ static void print_host_scans(const struct s_host_scans *host_scans, int index)
     printf("  ports:\n");
     printf("    range: %d-%d\n", host_scans->start_port, host_scans->end_port);
     printf("    ports: ");
-    for (int i = 0; i < MAX_SCAN_NUMBER && host_scans->ports[i] != 0; i++)
+    for (int i = 0; i < MAX_SCAN_NUMBER && host_scans->comma_separated_ports[i] != 0; i++)
     {
         if (i > 0)
             printf(", ");
-        printf("%d", host_scans->ports[i]);
+        printf("%d", host_scans->comma_separated_ports[i]);
     }
     printf("\n");
     
@@ -110,7 +110,9 @@ static void parse_scan_types(const char *scan_types_str, struct s_host_scans *ho
         }
         if (!is_flag_detected)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (scan flag) failure: invalid scan type %s"COLOR_RESET, &scan_types_str[i]));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (scan flag) failure: invalid scan type %s"COLOR_RESET, &scan_types_str[i]);
+            clean_exit_failure(error);
         }
         
         i += flag_len;
@@ -132,20 +134,28 @@ static void parse_ports(const char *ports_str, struct s_host_scans *host_scans)
         char *endptr = NULL;
         if (!isspace(ports_str[i]) && !isdigit(ports_str[i]))
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i);
+            clean_exit_failure(error);
         }
         port = strtol(&ports_str[i], &endptr, 10);
         if (port <= 0 || port > UINT16_MAX)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number is out of range at position %d"COLOR_RESET, i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: port number is out of range at position %d"COLOR_RESET, i);
+            clean_exit_failure(error);
         }
         if (port <= 0)
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port number must be greater than 0 at position %d"COLOR_RESET, i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: port number must be greater than 0 at position %d"COLOR_RESET, i);
+            clean_exit_failure(error);
         }
         if (endptr == &ports_str[i])
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: non numeric character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: non numeric character %c (ascii code %d) at position %d"COLOR_RESET, ports_str[i], (int) ports_str[i], i);
+            clean_exit_failure(error);
         }
         if (*endptr == '\0')
         {
@@ -155,7 +165,7 @@ static void parse_ports(const char *ports_str, struct s_host_scans *host_scans)
             } 
             else 
             {
-                host_scans->ports[host_scans->port_count++] = port;
+                host_scans->comma_separated_ports[host_scans->comma_separated_port_count++] = port;
             }
             break;
         }
@@ -165,11 +175,13 @@ static void parse_ports(const char *ports_str, struct s_host_scans *host_scans)
             {
                 clean_exit_failure("Argument parsing failure: port upper bound can not have comma separated numbers");
             }
-            host_scans->ports[host_scans->port_count++] = port;
+            host_scans->comma_separated_ports[host_scans->comma_separated_port_count++] = port;
             i = endptr - ports_str; // index of the comma, at the end of the cycle we move to potential next port
             if (ports_str[i + 1] == '\0')
             {
-                clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: port expected after ','"COLOR_RESET));
+                char error[MAX_ER_MSG_LEN];
+                snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: port expected after ','"COLOR_RESET);
+                clean_exit_failure(error);
             }
         }
         else if (*endptr == '-')
@@ -180,7 +192,9 @@ static void parse_ports(const char *ports_str, struct s_host_scans *host_scans)
         } 
         else 
         {
-            clean_exit_failure(fstring(RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, *endptr, (int) *endptr, (int)(endptr - ports_str)));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (port flag) failure: invalid character %c (ascii code %d) at position %d"COLOR_RESET, *endptr, (int) *endptr, (int)(endptr - ports_str));
+            clean_exit_failure(error);
         }
         i++;
     }
@@ -205,7 +219,9 @@ static void parse_file(const char *file_path, struct s_arguments *arguments)
     FILE *file = fopen(file_path, "r");
     if (file == NULL)
     {
-        clean_exit_failure(fstring(RED"Argument parsing failure: failed to open file %s\n"COLOR_RESET, file_path));
+        char error[MAX_ER_MSG_LEN];
+        snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing failure: failed to open file %s\n"COLOR_RESET, file_path);
+        clean_exit_failure(error);
     }
     
     char line[1024];
@@ -236,7 +252,9 @@ static void parse_file(const char *file_path, struct s_arguments *arguments)
         if (arguments->hosts_size >= MAX_HOSTS)
         {
             fclose(file);
-            clean_exit_failure(fstring(RED"File parsing failure: too many hosts, max is %d\n  line %d: %s"COLOR_RESET, MAX_HOSTS, line_number, original_line));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"File parsing failure: too many hosts, max is %d\n  line %d: %s"COLOR_RESET, MAX_HOSTS, line_number, original_line);
+            clean_exit_failure(error);
         }
         
         struct s_host_scans *host = &arguments->hosts[arguments->hosts_size];
@@ -254,7 +272,9 @@ static void parse_file(const char *file_path, struct s_arguments *arguments)
         if (ports_str == NULL)
         {
             fclose(file);
-            clean_exit_failure(fstring(RED"File parsing failure: missing ports\n  line %d: %s"COLOR_RESET, line_number, original_line));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"File parsing failure: missing ports\n  line %d: %s"COLOR_RESET, line_number, original_line);
+            clean_exit_failure(error);
         }
         parse_ports(ports_str, host);
         
@@ -276,16 +296,18 @@ static void parse_file(const char *file_path, struct s_arguments *arguments)
     }
 }
 
-static void init_host_scans(struct s_arguments *arguments)
+static void init_arguments(struct s_arguments *arguments)
 {
+    arguments->number_of_threads = 1;
+    arguments->is_help_requested = false;
     for (int i = 0; i < MAX_HOSTS; i++)
     {
         struct s_host_scans *host_scans = &arguments->hosts[i];
         host_scans->target_ip = 0;
         host_scans->start_port = -1;
         host_scans->end_port = -1;
-        memset(host_scans->ports, 0, sizeof(host_scans->ports));
-        host_scans->port_count = 0;
+        memset(host_scans->comma_separated_ports, 0, sizeof(host_scans->comma_separated_ports));
+        host_scans->comma_separated_port_count = 0;
         memset(host_scans->scan_types, 0, sizeof(host_scans->scan_types));
     }
 }
@@ -295,7 +317,7 @@ struct s_arguments parse_arguments(int ac, char **av)
     if (DEBUG) { printf("Parsing arguments\n"); }
     struct s_arguments arguments;
     memset(arguments.hosts, 0, sizeof(arguments.hosts));
-    init_host_scans(&arguments);
+    init_arguments(&arguments);
     int i = 1;
     while (i < ac)
     {
@@ -309,20 +331,20 @@ struct s_arguments parse_arguments(int ac, char **av)
             arguments.hosts_size = 1;
             i++;
             if (i >= ac) { clean_exit_failure(RED"Argument parsing failure: no IP address provided after --ip flag"COLOR_RESET); }
-            arguments.hosts[arguments.hosts_size].target_ip = get_ipv4_address(av[i]);
+            arguments.hosts[0].target_ip = get_ipv4_address(av[i]);
         }
         else if (strcmp("--ports", av[i]) == 0)
         {
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
-                parse_ports(av[next_arg], &arguments.hosts[arguments.hosts_size]);
+                parse_ports(av[next_arg], &arguments.hosts[0]);
                 i = next_arg;
             }
             else
             {
-                arguments.hosts[arguments.hosts_size].start_port = 1;
-                arguments.hosts[arguments.hosts_size].end_port = MAX_SCAN_NUMBER;
+                arguments.hosts[0].start_port = 1;
+                arguments.hosts[0].end_port = MAX_SCAN_NUMBER;
             }
         } 
         else if (strcmp("--speedup", av[i]) == 0) 
@@ -335,12 +357,16 @@ struct s_arguments parse_arguments(int ac, char **av)
             
                 if (endptr == av[next_arg] || *endptr != '\0')
                 {
-                    clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: invalid speedup value %s\n"COLOR_RESET, av[next_arg]));
+                    char error[MAX_ER_MSG_LEN];
+                    snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (speedup flag) failure: invalid speedup value %s\n"COLOR_RESET, av[next_arg]);
+                    clean_exit_failure(error);
                 }
             
                 if (speedup <= 0 || speedup > MAX_SPEEDUP)
                 {
-                    clean_exit_failure(fstring(RED"Argument parsing (speedup flag) failure: speedup value must be between 0 and %d\n"COLOR_RESET, MAX_SPEEDUP));
+                    char error[MAX_ER_MSG_LEN];
+                    snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing (speedup flag) failure: speedup value must be between 1 and %d\n"COLOR_RESET, MAX_SPEEDUP);
+                    clean_exit_failure(error);
                 }
                 
                 arguments.number_of_threads = speedup;
@@ -352,7 +378,7 @@ struct s_arguments parse_arguments(int ac, char **av)
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
             {
-                parse_scan_types(av[next_arg], &arguments.hosts[arguments.hosts_size]);
+                parse_scan_types(av[next_arg], &arguments.hosts[0]);
                 i = next_arg;
             }
         }
@@ -360,7 +386,9 @@ struct s_arguments parse_arguments(int ac, char **av)
         {
             if (i != 1)
             {
-                clean_exit_failure(fstring(RED"Argument parsing failure: --file flag must be the first argument\n"COLOR_RESET));
+                char error[MAX_ER_MSG_LEN];
+                snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing failure: --file flag must be the first argument\n"COLOR_RESET);
+                clean_exit_failure(error);
             }
             int next_arg = i + 1;
             if (next_arg < ac && (strncmp(av[next_arg], "--", 2) != 0))
@@ -370,12 +398,16 @@ struct s_arguments parse_arguments(int ac, char **av)
             }
             else
             {
-                clean_exit_failure(fstring(RED"Argument parsing failure: no file provided after --file flag\n"COLOR_RESET));
+                char error[MAX_ER_MSG_LEN];
+                snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing failure: no file provided after --file flag\n"COLOR_RESET);
+                clean_exit_failure(error);
             }
         }
         else
         {
-            clean_exit_failure(fstring(RED"Argument parsing failure: invalid argument %s\n"COLOR_RESET, av[i]));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, RED"Argument parsing failure: invalid argument %s\n"COLOR_RESET, av[i]);
+            clean_exit_failure(error);
         }
         i++;
     }
@@ -387,6 +419,11 @@ struct s_arguments parse_arguments(int ac, char **av)
     validate_arguments(&arguments);
     
     return arguments;
+}
+
+bool is_port_range_set(struct s_host_scans *host)
+{
+    return host->start_port != -1 && host->end_port != -1;
 }
 
 static void validate_arguments(const struct s_arguments *args)
@@ -407,33 +444,60 @@ static void validate_arguments(const struct s_arguments *args)
         
         if (host->target_ip == 0)
         {
-            clean_exit_failure(fstring("Argument validation failure: host %d has no IP address", i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, "Argument validation failure: host %d has no IP address", i);
+            clean_exit_failure(error);
         }
         
-        bool has_ports = host->port_count > 0 || (host->start_port != -1 && host->end_port != -1);
+        bool has_ports = host->comma_separated_port_count > 0 || (host->start_port != -1 && host->end_port != -1);
         if (!has_ports)
         {
-            clean_exit_failure(fstring("Argument validation failure: host %d has no ports specified", i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, "Argument validation failure: host %d has no ports specified", i);
+            clean_exit_failure(error);
         }
         
         if (host->start_port != -1 && host->start_port < 1)
         {
-            clean_exit_failure(fstring("Argument validation failure: host %d start port must be >= 1", i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, "Argument validation failure: host %d start port must be >= 1", i);
+            clean_exit_failure(error);
         }
         
         if (host->start_port != -1 && host->end_port != -1 && host->end_port <= host->start_port)
         {
-            clean_exit_failure(fstring("Argument validation failure: host %d end port must be greater than start port", i));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, "Argument validation failure: host %d end port must be greater than start port", i);
+            clean_exit_failure(error);
         }
         
-        int total_ports = host->port_count;
+        int total_ports = host->comma_separated_port_count;
         if (host->start_port != -1 && host->end_port != -1)
         {
             total_ports += host->end_port - host->start_port + 1;
         }
         if (total_ports > MAX_SCAN_NUMBER)
         {
-            clean_exit_failure(fstring("Argument validation failure: host %d has too many ports (%d), max is %d", i, total_ports, MAX_SCAN_NUMBER));
+            char error[MAX_ER_MSG_LEN];
+            snprintf(error, MAX_ER_MSG_LEN, "Argument validation failure: host %d has too many ports (%d), max is %d", i, total_ports, MAX_SCAN_NUMBER);
+            clean_exit_failure(error);
         }
     }
+}
+
+struct s_host_scans *get_host_scans_by_ip(struct s_arguments *arguments, uint32_t ip)
+{
+    int i = 0;
+    while(i < arguments->hosts_size)
+    {
+        if (arguments->hosts[i].target_ip == ip)
+        {
+            return &arguments->hosts[i];
+        }
+        i++;
+    }
+    char error[MAX_ER_MSG_LEN];
+    snprintf(error, MAX_ER_MSG_LEN, LOG_TAG"Failed to find host by ip %s\n", inet_ntoa((struct in_addr) {ip}));
+    clean_exit_failure(error);
+    return NULL;
 }

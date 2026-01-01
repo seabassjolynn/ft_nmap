@@ -4,6 +4,7 @@
 #include "net.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "arguments.h"
 
 enum port_state
 {
@@ -27,21 +28,6 @@ enum scan_type
 
 const char *scan_type_to_string(enum scan_type type);
 
-enum port_state scan_syn(const struct s_net_config *config, uint16_t port);
-
-enum port_state scan(enum scan_type scan_type, const struct s_net_config *config, uint16_t port);
-
-enum port_state scan_ack(const struct s_net_config *config, uint16_t port);
-
-enum port_state scan_udp(const struct s_net_config *config, uint16_t port);
-
-#define SCAN_TYPES_NUMBER 6
-
-struct s_scan
-{
-    uint16_t port;
-    enum scan_type types[SCAN_TYPES_NUMBER];
-    bool types_statuses[SCAN_TYPES_NUMBER];
-};
+void create_scan_port_tasks_and_add_to_queue(struct s_arguments *arguments);
 
 #endif

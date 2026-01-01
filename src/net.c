@@ -12,7 +12,6 @@
 #include <netinet/tcp.h>
 #include "color_output.h"
 #include <sys/socket.h>
-#include "utils.h"
 
 #define IPV4_LEN 4
 #define BROADCAST_MAC {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -293,7 +292,7 @@ void write_full_tcp_header(const struct s_net_config *config, struct s_tcp_param
 void write_udp_header(struct  s_ip_header *ip_header, uint8_t *packet, uint16_t source_port, uint16_t destination_port)
 {
     struct s_udp_header *udp_header = (struct s_udp_header *)packet;
-    udp_header->src_port = htons(42000); //random port
+    udp_header->src_port = htons(source_port);
     udp_header->dst_port = htons(destination_port);
     udp_header->total_length = htons(sizeof(struct s_udp_header));
     udp_header->checksum = 0;
@@ -404,7 +403,9 @@ uint32_t get_ipv4_address(const char *host_name_or_ip)
     if ((result = getaddrinfo(host_name_or_ip,NULL, &hints, &result_addr_info)) != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
-        clean_exit_failure(fstring(RED"Failed to get IPv4 address for host or ip: %s"COLOR_RESET, host_name_or_ip));
+        char error[MAX_ER_MSG_LEN];
+        snprintf(error, MAX_ER_MSG_LEN, RED"Failed to get IPv4 address for host or ip: %s"COLOR_RESET, host_name_or_ip);
+        clean_exit_failure(error);
     }
     struct sockaddr_in *sockaddr_in = (struct sockaddr_in *)result_addr_info->ai_addr;
     uint32_t ipv4_address = sockaddr_in->sin_addr.s_addr;

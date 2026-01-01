@@ -1,9 +1,7 @@
 #include "net.h"
-#include "debug.h"
 #include "resources.h"
 #include <string.h>
 #include "pcap_utils.h"
-#include "utils.h"
 #include "color_output.h"
 
 static struct in_addr default_gateway_ip(void) {
@@ -72,7 +70,8 @@ void request_gateway_mac(struct s_net_config *config) {
     
     pcap_t *handle = create_capture_handle(config->device_name); 
     
-    char *filter = fstring("arp and arp src host %s and arp[6:2] = 2", inet_ntoa(gateway_ip));
+    char filter[512];
+    snprintf(filter, sizeof(filter), "arp and arp src host %s and arp[6:2] = 2", inet_ntoa(gateway_ip));
 
     send_packet(handle, arp_request, sizeof(arp_request));
     
