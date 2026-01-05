@@ -157,27 +157,28 @@ void create_host_discovery_tasks_and_add_to_queue(struct s_arguments *arguments,
         task.is_scan = false;
         task.net_config = *net_config;
         task.net_config.target_ip.s_addr = arguments->hosts[i].target_ip;
+        strncpy(task.net_config.host_name, arguments->hosts[i].host_id_as_in_args, MAX_HOST_ID_LEN - 1);
+        task.net_config.host_name[MAX_HOST_ID_LEN - 1] = '\0';
         
-        if (DEBUG) { printf(LOG_TAG"Creating task (echo ping probe for host %s)\n", ip_str); }
+        if (DEBUG) { printf(LOG_TAG"Creating task (echo ping probe for host %s (%s))\n", ip_str, task.net_config.host_name); }
 
         task.is_host_up_func = &probe_with_ping_echo_remote;
         queue_add(task);
 
-        if (DEBUG) { printf(LOG_TAG"Creating task (timestamp ping probe for host %s)\n", ip_str); }
+        if (DEBUG) { printf(LOG_TAG"Creating task (timestamp ping probe for host %s (%s))\n", ip_str, task.net_config.host_name); }
 
         task.is_host_up_func = &probe_with_ping_timestamp_remote;
         queue_add(task);
         
-        if (DEBUG) { printf(LOG_TAG"Creating task (tcp syn (443) probe for host %s)\n", ip_str); }
+        if (DEBUG) { printf(LOG_TAG"Creating task (tcp syn (443) probe for host %s (%s))\n", ip_str, task.net_config.host_name); }
 
         task.is_host_up_func = &probe_with_tcp_syn_to_port_443;
         queue_add(task);
 
-        if (DEBUG) { printf(LOG_TAG"Creating task (tcp syn (80) probe for host %s)\n", ip_str); }
+        if (DEBUG) { printf(LOG_TAG"Creating task (tcp syn (80) probe for host %s (%s))\n", ip_str, task.net_config.host_name); }
 
         task.is_host_up_func = &probe_with_tcp_syn_to_port_80;
         queue_add(task);
         i++;
     }
-    
 }

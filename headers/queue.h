@@ -20,6 +20,7 @@ struct s_task
     bool is_scan;
     struct s_net_config net_config;
     uint16_t port;
+    enum scan_type scan_type;
     enum port_state (*scan_func) (const struct s_net_config *, uint16_t);
     enum port_state scan_result;
     bool (*is_host_up_func) (const struct s_net_config *);

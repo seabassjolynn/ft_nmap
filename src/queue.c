@@ -169,11 +169,11 @@ void queue_await_all_tasks_completion()
     
     while(g_completed_task_count < g_queue_size)
     {
-        if (DEBUG) { printf("Task producer: Waiting for all tasks completion\n"); }
+        if (DEBUG) { printf(LOG_TAG"Task producer: Waiting for all tasks completion\n"); }
         pthread_cond_wait(&g_queue_condition_task_compling, &g_queue_mutex_task_comleting);
     }
 
-    if (DEBUG) { printf("Task producer: All task completed so start handling task results\n"); }
+    if (DEBUG) { printf(LOG_TAG"Task producer: All task completed\n"); }
 
     pthread_mutex_unlock(&g_queue_mutex_task_comleting);
 }

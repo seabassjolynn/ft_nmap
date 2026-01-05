@@ -28,6 +28,8 @@ enum scan_type
 
 const char *scan_type_to_string(enum scan_type type);
 
-void create_scan_port_tasks_and_add_to_queue(struct s_arguments *arguments);
+const char *scan_result_to_string(enum port_state port_state);
+
+void create_scan_tasks_and_add_to_queue(struct s_arguments *arguments, struct s_net_config *net_config);
 
 #endif

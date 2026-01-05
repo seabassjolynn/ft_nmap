@@ -1,6 +1,7 @@
 #ifndef NET_H
 #define NET_H
 
+#include "arguments.h"
 #include <stdbool.h>
 #include <stdint.h>
 #ifndef _DEFAULT_SOURCE
@@ -33,7 +34,7 @@ void mac_address_for_device(char *device_name, uint8_t *mac_address_out);
 
 void print_mac(uint8_t *arr);
 
-char * mac_to_string(uint8_t *arr);
+char * mac_to_string(const uint8_t *arr);
 
 struct s_net_config {
     char device_name[30];
@@ -42,7 +43,7 @@ struct s_net_config {
     
     uint8_t gateway_mac[6];
     struct in_addr target_ip;
-    uint16_t target_port;
+    char host_name[MAX_HOST_ID_LEN];
 };
 
 void write_ethernet_header_local_to_gateway(const struct s_net_config *config, uint16_t ether_type, uint8_t *buffer);
@@ -165,5 +166,9 @@ void write_full_tcp_header(const struct s_net_config *config, struct s_tcp_param
 #define PACKET_READING_TIMEOUT_SEC_DEFAULT 1
 
 uint32_t get_ipv4_address(const char *host_name_or_ip);
+
+struct s_net_config get_net_config();
+
+void print_net_config(const struct s_net_config *net_config);
 
 #endif

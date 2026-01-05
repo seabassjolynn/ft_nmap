@@ -6,8 +6,8 @@
 # scan_types (optional): SYN,FIN,NULL,XMAS,ACK,UDP (if omitted, all types are used)
 
 # Example hosts:
-22.22.22.22 1-10 ACK,UDP
-scanme.nmap.org 22,80,99-100 SYN,UDP
-yandex.ru -100 SYN,ACK
-google.com 1,2,3 
-
+22.22.22.22 1 UDP
+scanme.nmap.org 11-12 SYN,ACK
+forum.sevastopol.info 30-40 ACK
+google.com 1,2,3 SYN,ACK,XMAS
+yandex.ru 1,2,3-20 SYN,ACK,XMAS

@@ -139,7 +139,6 @@ const char *scan_type_to_string(enum scan_type type)
     return names[type];
 }
 
-
 //This scan can perform NULL, FIN, XMAS scans. The idea of these scans is to send a TCP packet that has unusual flags set - the main thing is no SYN flag.
 //According to the RFC, if port is closed, the host should respond with an RST packet in case TCP doesn't have SYN, RST or ACK flags). If port is open, the 
 //host should just drop packet without SYN, RST or ACK flags. 
@@ -397,6 +396,7 @@ static struct s_task create_port_scan_task_for_port_and_type(uint16_t port, enum
     task.is_scan = true;
     task.net_config = *net_config;
     task.port = port;
+    task.scan_type = scan_type;
     switch (scan_type)
     {
         case SCAN_FIN:
@@ -423,7 +423,7 @@ static struct s_task create_port_scan_task_for_port_and_type(uint16_t port, enum
     return task;
 }
 
-static void create_port_scan_tasks_for_port_add_add_to_queue(uint16_t port, bool scan_types[], const struct s_net_config *net_config)
+static void create_port_scan_tasks_for_port_and_add_to_queue(uint16_t port, bool scan_types[], const struct s_net_config *net_config)
 {        
     if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for port %d\n", port); }
     
@@ -453,56 +453,60 @@ static void create_port_scan_tasks_for_port_add_add_to_queue(uint16_t port, bool
     }
 }
 
-static void create_port_scan_tasks_and_add_to_queue(struct s_arguments *arguments, uint32_t host_ip, const struct s_net_config *net_config)
+static void create_scan_tasks_for_host_and_add_to_queue(struct s_host_scan *host_scan, const struct s_net_config *net_config)
 {
-    struct s_host_scans *host = get_host_scans_by_ip(arguments, host_ip);
-    if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for host %s\n", inet_ntoa( (struct in_addr) {host->target_ip})); }
-    if (host->comma_separated_port_count > 0)
+    struct s_net_config net_config_copy = *net_config;
+    net_config_copy.target_ip.s_addr = host_scan->target_ip;
+    strncpy(net_config_copy.host_name, host_scan->host_id_as_in_args, MAX_HOST_ID_LEN - 1);
+    net_config_copy.host_name[MAX_HOST_ID_LEN - 1] = '\0';
+    
+    if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for host %s (%s)\n", inet_ntoa(net_config_copy.target_ip), host_scan->host_id_as_in_args); }
+    if (host_scan->comma_separated_port_count > 0)
     {
         if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks for comma separated ports\n"); }
         int i = 0;
-        while (i < host->comma_separated_port_count)
+        while (i < host_scan->comma_separated_port_count)
         {
-            int port = host->comma_separated_ports[i];
-            create_port_scan_tasks_for_port_add_add_to_queue(port, host->scan_types, net_config);
+            int port = host_scan->comma_separated_ports[i];
+            create_port_scan_tasks_for_port_and_add_to_queue(port, host_scan->scan_types, &net_config_copy);
             i++;
         }
     }
 
-    if (is_port_range_set(host))
+    if (is_port_range_set(host_scan))
     {
         if (DEBUG) { printf(LOG_TAG"Creating port scanning tasks ports range\n"); }
-        int start_port = host->start_port;
-        int end_port = host->end_port;
+        int start_port = host_scan->start_port;
+        int end_port = host_scan->end_port;
         while (start_port <= end_port)
         {
-            create_port_scan_tasks_for_port_add_add_to_queue(start_port, host->scan_types, net_config);
+            create_port_scan_tasks_for_port_and_add_to_queue(start_port, host_scan->scan_types, &net_config_copy);
             start_port++;
         }
     }
 }
 
-void create_scan_port_tasks_and_add_to_queue(struct s_arguments *arguments)
+void create_scan_tasks_and_add_to_queue(struct s_arguments *arguments, struct s_net_config *net_config)
 {
     int i = 0;
-    struct in_addr current_target;
-    current_target.s_addr = 0;
+    struct in_addr prev_target_addr;
+    prev_target_addr.s_addr = 0;
     bool is_host_up = false;
-    while (i < g_completed_task_count)
+    while (i < g_completed_task_count && i < g_queue_size)
     {
         struct s_task task = g_queue[i];
-        if (current_target.s_addr != task.net_config.target_ip.s_addr)
+        if (prev_target_addr.s_addr != task.net_config.target_ip.s_addr)
         {
             if (i != 0)
             {
-                if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( current_target)), is_host_up ? "up" : "down"); }
+                if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( prev_target_addr)), is_host_up ? "up" : "down"); }
                 if (is_host_up)
                 {
-                    
-                    create_port_scan_tasks_and_add_to_queue(arguments, current_target.s_addr, &task.net_config);
+                    struct s_host_scan *host_scan = get_host_scans_by_ip(arguments, prev_target_addr.s_addr);
+                    create_scan_tasks_for_host_and_add_to_queue(host_scan, net_config);
                 }
             }
-            current_target.s_addr = task.net_config.target_ip.s_addr;
+            prev_target_addr.s_addr = task.net_config.target_ip.s_addr;
             is_host_up = false;
         }
         if (task.is_host_up_result)
@@ -511,10 +515,23 @@ void create_scan_port_tasks_and_add_to_queue(struct s_arguments *arguments)
         }
         i++;
     }
-    if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( current_target)), is_host_up ? "up" : "down"); }
+    if (DEBUG) { printf(LOG_TAG"Host %s is %s\n", inet_ntoa(( prev_target_addr)), is_host_up ? "up" : "down"); }
     if (is_host_up)
     {
-        struct s_task task = g_queue[i];
-        create_port_scan_tasks_and_add_to_queue(arguments, current_target.s_addr, &task.net_config);
+        struct s_host_scan *host_scan = get_host_scans_by_ip(arguments, prev_target_addr.s_addr);
+        create_scan_tasks_for_host_and_add_to_queue(host_scan, net_config);
     }
+}
+
+const char *scan_result_to_string(enum port_state port_state)
+{
+    static const char *names[] = {
+        [OPEN]  = "OPEN",
+        [CLOSED] = "CLOSED",
+        [FILTERED] = "FILTERED",
+        [OPEN_FILTERED]  = "OPEN_FILTERED",
+        [UNFILTERED]  = "UNFILTERED",
+        [UNKNOWN]  = "UNKNOWN"
+    };
+    return names[port_state];
 }
